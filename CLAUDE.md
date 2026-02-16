@@ -124,6 +124,60 @@ All endpoints under `/api` prefix:
 - Sync pulls data from Sleeper API and updates MySQL
 - Run sync after setup to populate initial data
 
+## Git Workflow
+
+**IMPORTANT**: All feature development and bug fixes MUST be done in feature branches, NOT directly on `main`.
+
+### Branch Strategy
+1. **main** - Production-ready code only
+2. **feature/** - New features (e.g., `feature/add-player-stats-page`)
+3. **bugfix/** - Bug fixes (e.g., `bugfix/cors-error`)
+4. **hotfix/** - Urgent production fixes
+
+### Workflow Rules
+1. **Never commit directly to main** - All changes must go through pull requests
+2. **Create a branch for each feature/bug**:
+   ```bash
+   git checkout -b feature/feature-name
+   # or
+   git checkout -b bugfix/bug-description
+   ```
+3. **Work on your branch**, commit regularly with clear messages
+4. **Push your branch** to GitHub:
+   ```bash
+   git push -u origin feature/feature-name
+   ```
+5. **Create a Pull Request** on GitHub for code review
+6. **Merge only after review** - Use GitHub's merge button
+7. **Delete branch after merge** to keep repository clean
+
+### Commit Message Guidelines
+- Use present tense: "Add feature" not "Added feature"
+- Be descriptive: "Fix CORS error for port 5176" not "Fix bug"
+- Reference issues if applicable: "Fix #123: Add player search"
+- Include co-author line for AI assistance:
+  ```
+  Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+  ```
+
+### Example Workflow
+```bash
+# Create feature branch
+git checkout -b feature/add-owner-stats
+
+# Make changes and commit
+git add .
+git commit -m "Add owner career statistics endpoint"
+
+# Push to GitHub
+git push -u origin feature/add-owner-stats
+
+# Create PR on GitHub, get review, merge
+# After merge, switch back to main and pull
+git checkout main
+git pull origin main
+```
+
 ## Coding Guidelines
 
 ### Python (Backend)
