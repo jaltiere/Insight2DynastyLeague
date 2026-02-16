@@ -1,0 +1,34 @@
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    # Application
+    APP_NAME: str = "Insight2Dynasty API"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
+
+    # Database
+    DATABASE_URL: str = "mysql+aiomysql://insight2dynasty_user:insight2dynasty_pass@localhost:3306/insight2dynasty"
+
+    # Sleeper API
+    SLEEPER_LEAGUE_ID: str = "1313933992642220032"
+    SLEEPER_BASE_URL: str = "https://api.sleeper.app/v1"
+
+    # CORS
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    # API Rate Limiting
+    SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()

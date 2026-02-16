@@ -1,0 +1,27 @@
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+aiomysql==0.2.0
+pymysql==1.1.0
+
+# Validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# HTTP client for Sleeper API
+httpx==0.26.0
+aiofiles==23.2.1
+
+# CORS
+python-cors==1.0.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Utilities
+python-dateutil==2.8.2
