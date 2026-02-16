@@ -68,7 +68,6 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
         award_data = {
             "user_id": user.id,
             "display_name": user.display_name or user.username,
-            "team_name": award.team_name
         }
 
         if award.award_type == "champion":
@@ -76,7 +75,7 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
         elif award.award_type == "division_winner":
             division_winners.append({
                 **award_data,
-                "division": award.division
+                "division": award.award_detail
             })
         elif award.award_type == "consolation":
             consolation_winner = award_data
