@@ -12,6 +12,7 @@ export const apiClient = axios.create({
 // API endpoint functions
 export const api = {
   // Standings
+  getStandings: () => apiClient.get('/standings').then(res => res.data),
   getCurrentStandings: () => apiClient.get('/standings'),
   getHistoricalStandings: (season: number) => apiClient.get(`/standings/${season}`),
 
