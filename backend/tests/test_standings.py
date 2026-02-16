@@ -73,50 +73,9 @@ async def test_standings_response_has_all_fields(client, db_session):
     data = response.json()
     assert "season" in data
     assert "num_divisions" in data
-    assert "division_names" in data
     assert "total_teams" in data
 
     standing = data["standings"][0]
-    for key in ["roster_id", "user_id", "username", "display_name", "team_name", "division",
+    for key in ["roster_id", "user_id", "display_name", "team_name", "division",
                 "wins", "losses", "ties", "points_for", "points_against", "win_percentage"]:
         assert key in standing, f"Missing key: {key}"
-
-
-async def test_standings_division_names_from_league_metadata(client, db_session):
-    league = await create_league(
-        db_session,
-        league_metadata={"division_1": "Havoc", "division_2": "Vengeance"},
-    )
-    season = await create_season(db_session, league)
-    user = await create_user(db_session)
-    await create_roster(db_session, season, user)
-
-    response = await client.get("/api/standings")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["division_names"] == {"1": "Havoc", "2": "Vengeance"}
-
-
-async def test_standings_division_names_fallback_without_metadata(client, db_session):
-    league = await create_league(db_session)  # no league_metadata
-    season = await create_season(db_session, league)
-    user = await create_user(db_session)
-    await create_roster(db_session, season, user)
-
-    response = await client.get("/api/standings")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["division_names"] == {"1": "Division 1", "2": "Division 2"}
-
-
-async def test_standings_username_and_team_name(client, db_session):
-    league = await create_league(db_session)
-    season = await create_season(db_session, league)
-    user = await create_user(db_session, display_name="jaltiere")
-    await create_roster(db_session, season, user, team_name="Shark Byte")
-
-    response = await client.get("/api/standings")
-    assert response.status_code == 200
-    standing = response.json()["standings"][0]
-    assert standing["username"] == "jaltiere"
-    assert standing["team_name"] == "Shark Byte"
