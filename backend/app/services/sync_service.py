@@ -45,9 +45,9 @@ class SyncService:
             # Sync current season
             await self._sync_season(league_data, current_season)
 
-            # Sync rosters
+            # Sync rosters (pass users_data for team names from user metadata)
             rosters_data = await self.client.get_rosters()
-            await self._sync_rosters(rosters_data, current_season)
+            await self._sync_rosters(rosters_data, current_season, users_data)
 
             # Sync matchups for all weeks
             await self._sync_matchups(current_season, nfl_state.get("week", 1))
@@ -89,6 +89,7 @@ class SyncService:
             league.settings = league_data.get("settings", {})
             league.scoring_settings = league_data.get("scoring_settings", {})
             league.roster_positions = league_data.get("roster_positions", [])
+            league.league_metadata = league_data.get("metadata", {})
         else:
             # Create new
             league = League(
@@ -99,7 +100,8 @@ class SyncService:
                 status=league_data.get("status"),
                 settings=league_data.get("settings", {}),
                 scoring_settings=league_data.get("scoring_settings", {}),
-                roster_positions=league_data.get("roster_positions", [])
+                roster_positions=league_data.get("roster_positions", []),
+                league_metadata=league_data.get("metadata", {})
             )
             self.db.add(league)
 
@@ -162,7 +164,8 @@ class SyncService:
 
         logger.info(f"Synced season {year}")
 
-    async def _sync_rosters(self, rosters_data: List[Dict[str, Any]], year: int):
+    async def _sync_rosters(self, rosters_data: List[Dict[str, Any]], year: int,
+                            users_data: List[Dict[str, Any]] = None):
         """Sync team rosters."""
         # Get season
         result = await self.db.execute(
@@ -172,6 +175,15 @@ class SyncService:
         if not season:
             logger.error(f"Season {year} not found")
             return
+
+        # Build user_id -> team_name mapping from users metadata
+        user_team_names = {}
+        if users_data:
+            for user_data in users_data:
+                uid = user_data.get("user_id")
+                team_name = (user_data.get("metadata") or {}).get("team_name")
+                if uid and team_name:
+                    user_team_names[uid] = team_name
 
         for roster_data in rosters_data:
             roster_id = roster_data.get("roster_id")
@@ -184,10 +196,13 @@ class SyncService:
             )
             roster = result.scalar_one_or_none()
 
+            owner_id = roster_data.get("owner_id")
             settings = roster_data.get("settings", {})
+            team_name = user_team_names.get(owner_id)
 
             if roster:
-                roster.user_id = roster_data.get("owner_id")
+                roster.user_id = owner_id
+                roster.team_name = team_name
                 roster.wins = settings.get("wins", 0)
                 roster.losses = settings.get("losses", 0)
                 roster.ties = settings.get("ties", 0)
@@ -202,7 +217,8 @@ class SyncService:
                 roster = Roster(
                     roster_id=roster_id,
                     season_id=season.id,
-                    user_id=roster_data.get("owner_id"),
+                    user_id=owner_id,
+                    team_name=team_name,
                     division=settings.get("division"),
                     wins=settings.get("wins", 0),
                     losses=settings.get("losses", 0),

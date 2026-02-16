@@ -215,6 +215,15 @@ git pull origin main
 4. Verify data sync works
 5. Check responsive design on mobile
 
+### Unit Testing Requirements
+- **Always add or update unit tests** when adding new features, fixing bugs, or modifying API endpoints
+- Backend tests live in `backend/tests/` using pytest with async support
+- Use the factory helpers in `backend/tests/conftest.py` (`create_league`, `create_user`, `create_season`, `create_roster`, etc.) to set up test data
+- Tests run against an in-memory SQLite database (no MySQL required)
+- Run tests with: `cd backend && py -m pytest tests/ -v`
+- Test both the happy path and edge cases (missing data, fallback behavior, 404s)
+- When modifying an API response shape, update `test_*_response_has_all_fields` tests to include new fields
+
 ## Deployment
 - TBD - Focus on local development first
 - Backend: Needs Python 3.11+ environment

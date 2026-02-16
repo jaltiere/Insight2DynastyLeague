@@ -16,6 +16,7 @@ class League(Base):
     settings = Column(JSON)  # League settings from Sleeper
     scoring_settings = Column(JSON)  # Scoring configuration
     roster_positions = Column(JSON)  # Available roster positions
+    league_metadata = Column("metadata", JSON)  # League metadata from Sleeper (division names, etc.)
 
     # Relationships
     seasons = relationship("Season", back_populates="league", cascade="all, delete-orphan")
