@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
 from app.database import get_db
+from app.models import Season, Roster, User
+from typing import List, Dict, Any
 
 router = APIRouter()
 
@@ -8,12 +11,64 @@ router = APIRouter()
 @router.get("/standings")
 async def get_current_standings(db: AsyncSession = Depends(get_db)):
     """Get current season standings."""
-    # TODO: Implement standings logic
-    return {"message": "Current standings endpoint - to be implemented"}
+    # Get the most recent season
+    result = await db.execute(
+        select(Season).order_by(desc(Season.year)).limit(1)
+    )
+    season = result.scalar_one_or_none()
+
+    if not season:
+        raise HTTPException(status_code=404, detail="No season data found")
+
+    return await _get_season_standings(db, season.year)
 
 
-@router.get("/standings/{season}")
-async def get_historical_standings(season: int, db: AsyncSession = Depends(get_db)):
+@router.get("/standings/{season_year}")
+async def get_historical_standings(season_year: int, db: AsyncSession = Depends(get_db)):
     """Get historical standings for a specific season."""
-    # TODO: Implement historical standings logic
-    return {"message": f"Historical standings for season {season} - to be implemented"}
+    return await _get_season_standings(db, season_year)
+
+
+async def _get_season_standings(db: AsyncSession, year: int) -> Dict[str, Any]:
+    """Helper function to get standings for a specific season."""
+    # Get season
+    result = await db.execute(
+        select(Season).where(Season.year == year)
+    )
+    season = result.scalar_one_or_none()
+
+    if not season:
+        raise HTTPException(status_code=404, detail=f"Season {year} not found")
+
+    # Get all rosters for this season with user info
+    result = await db.execute(
+        select(Roster, User)
+        .join(User, Roster.user_id == User.id)
+        .where(Roster.season_id == season.id)
+        .order_by(desc(Roster.wins), desc(Roster.points_for))
+    )
+    rosters_with_users = result.all()
+
+    # Build standings data
+    standings = []
+    for roster, user in rosters_with_users:
+        standings.append({
+            "roster_id": roster.roster_id,
+            "user_id": user.id,
+            "display_name": user.display_name or user.username,
+            "team_name": roster.team_name,
+            "division": roster.division,
+            "wins": roster.wins,
+            "losses": roster.losses,
+            "ties": roster.ties,
+            "points_for": roster.points_for,
+            "points_against": roster.points_against,
+            "win_percentage": round(roster.wins / max(roster.wins + roster.losses + roster.ties, 1), 3)
+        })
+
+    return {
+        "season": year,
+        "num_divisions": season.num_divisions,
+        "total_teams": len(standings),
+        "standings": standings
+    }
