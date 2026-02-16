@@ -40,7 +40,7 @@ export default function Home() {
         {/* Division 1 */}
         <div className="bg-white rounded-lg shadow">
           <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg">
-            <h2 className="text-xl font-semibold">Division 1</h2>
+            <h2 className="text-xl font-semibold">{standings?.division_names?.['1'] || 'Division 1'}</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -58,7 +58,9 @@ export default function Home() {
                 {division1.map((team: any) => (
                   <tr key={team.roster_id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      {team.team_name || team.display_name}
+                      {team.team_name
+                        ? <>{team.team_name} <span className="text-gray-500 font-normal">({team.username})</span></>
+                        : team.username}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-center">{team.wins}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-center">{team.losses}</td>
@@ -75,7 +77,7 @@ export default function Home() {
         {/* Division 2 */}
         <div className="bg-white rounded-lg shadow">
           <div className="bg-green-600 text-white px-6 py-3 rounded-t-lg">
-            <h2 className="text-xl font-semibold">Division 2</h2>
+            <h2 className="text-xl font-semibold">{standings?.division_names?.['2'] || 'Division 2'}</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -93,7 +95,9 @@ export default function Home() {
                 {division2.map((team: any) => (
                   <tr key={team.roster_id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      {team.team_name || team.display_name}
+                      {team.team_name
+                        ? <>{team.team_name} <span className="text-gray-500 font-normal">({team.username})</span></>
+                        : team.username}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-center">{team.wins}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-center">{team.losses}</td>
