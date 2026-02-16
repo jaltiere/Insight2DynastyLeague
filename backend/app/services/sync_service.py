@@ -1,0 +1,426 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.services.sleeper_client import sleeper_client
+from app.models import (
+    League, User, Season, Roster, Matchup, Player, Transaction, Draft, DraftPick
+)
+from typing import Dict, Any, List
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class SyncService:
+    """Service to sync data from Sleeper API to database."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.client = sleeper_client
+
+    @staticmethod
+    def _safe_int(value):
+        """Convert value to int or None if empty/invalid."""
+        if value is None or value == '' or value == 'None':
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+
+    async def sync_league(self) -> Dict[str, Any]:
+        """Sync complete league data from Sleeper."""
+        try:
+            # Get current NFL state
+            nfl_state = await self.client.get_nfl_state()
+            current_season = nfl_state.get("season")
+
+            # Sync league info
+            league_data = await self.client.get_league()
+            await self._sync_league_data(league_data)
+
+            # Sync users
+            users_data = await self.client.get_users()
+            await self._sync_users(users_data)
+
+            # Sync current season
+            await self._sync_season(league_data, current_season)
+
+            # Sync rosters
+            rosters_data = await self.client.get_rosters()
+            await self._sync_rosters(rosters_data, current_season)
+
+            # Sync matchups for all weeks
+            await self._sync_matchups(current_season, nfl_state.get("week", 1))
+
+            # Sync drafts
+            drafts_data = await self.client.get_drafts()
+            await self._sync_drafts(drafts_data, current_season)
+
+            # Sync players (this is a large dataset)
+            await self._sync_players()
+
+            await self.db.commit()
+
+            return {
+                "status": "success",
+                "message": "League data synced successfully",
+                "season": current_season
+            }
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error syncing league data: {e}")
+            raise
+
+    async def _sync_league_data(self, league_data: Dict[str, Any]):
+        """Sync league configuration."""
+        league_id = league_data.get("league_id")
+
+        # Check if league exists
+        result = await self.db.execute(
+            select(League).where(League.id == league_id)
+        )
+        league = result.scalar_one_or_none()
+
+        if league:
+            # Update existing
+            league.name = league_data.get("name")
+            league.season = league_data.get("season")
+            league.status = league_data.get("status")
+            league.settings = league_data.get("settings", {})
+            league.scoring_settings = league_data.get("scoring_settings", {})
+            league.roster_positions = league_data.get("roster_positions", [])
+        else:
+            # Create new
+            league = League(
+                id=league_id,
+                name=league_data.get("name"),
+                sport="nfl",
+                season=league_data.get("season"),
+                status=league_data.get("status"),
+                settings=league_data.get("settings", {}),
+                scoring_settings=league_data.get("scoring_settings", {}),
+                roster_positions=league_data.get("roster_positions", [])
+            )
+            self.db.add(league)
+
+        logger.info(f"Synced league: {league.name}")
+
+    async def _sync_users(self, users_data: List[Dict[str, Any]]):
+        """Sync league users (owners)."""
+        for user_data in users_data:
+            user_id = user_data.get("user_id")
+
+            result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+
+            if user:
+                user.username = user_data.get("username") or user_data.get("display_name")
+                user.display_name = user_data.get("display_name")
+                user.avatar = user_data.get("avatar")
+            else:
+                user = User(
+                    id=user_id,
+                    username=user_data.get("username") or user_data.get("display_name"),
+                    display_name=user_data.get("display_name"),
+                    avatar=user_data.get("avatar"),
+                    is_active=True
+                )
+                self.db.add(user)
+
+        logger.info(f"Synced {len(users_data)} users")
+
+    async def _sync_season(self, league_data: Dict[str, Any], year: int):
+        """Sync season metadata."""
+        league_id = league_data.get("league_id")
+        settings = league_data.get("settings", {})
+
+        result = await self.db.execute(
+            select(Season).where(
+                Season.league_id == league_id,
+                Season.year == year
+            )
+        )
+        season = result.scalar_one_or_none()
+
+        if season:
+            season.num_divisions = settings.get("divisions", 2)
+            season.playoff_structure = settings.get("playoff_structure", {})
+            season.regular_season_weeks = settings.get("playoff_week_start", 14) - 1
+            season.playoff_weeks = settings.get("playoff_rounds", 3)
+        else:
+            season = Season(
+                league_id=league_id,
+                year=year,
+                num_divisions=settings.get("divisions", 2),
+                playoff_structure=settings.get("playoff_structure", {}),
+                regular_season_weeks=settings.get("playoff_week_start", 14) - 1,
+                playoff_weeks=settings.get("playoff_rounds", 3)
+            )
+            self.db.add(season)
+
+        logger.info(f"Synced season {year}")
+
+    async def _sync_rosters(self, rosters_data: List[Dict[str, Any]], year: int):
+        """Sync team rosters."""
+        # Get season
+        result = await self.db.execute(
+            select(Season).where(Season.year == year)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            logger.error(f"Season {year} not found")
+            return
+
+        for roster_data in rosters_data:
+            roster_id = roster_data.get("roster_id")
+
+            result = await self.db.execute(
+                select(Roster).where(
+                    Roster.season_id == season.id,
+                    Roster.roster_id == roster_id
+                )
+            )
+            roster = result.scalar_one_or_none()
+
+            settings = roster_data.get("settings", {})
+
+            if roster:
+                roster.user_id = roster_data.get("owner_id")
+                roster.wins = settings.get("wins", 0)
+                roster.losses = settings.get("losses", 0)
+                roster.ties = settings.get("ties", 0)
+                roster.points_for = int(settings.get("fpts", 0) or 0)
+                roster.points_against = int(settings.get("fpts_against", 0) or 0)
+                roster.players = roster_data.get("players", [])
+                roster.starters = roster_data.get("starters", [])
+                roster.reserve = roster_data.get("reserve", [])
+                roster.taxi = roster_data.get("taxi", [])
+                roster.settings = settings
+            else:
+                roster = Roster(
+                    roster_id=roster_id,
+                    season_id=season.id,
+                    user_id=roster_data.get("owner_id"),
+                    division=settings.get("division"),
+                    wins=settings.get("wins", 0),
+                    losses=settings.get("losses", 0),
+                    ties=settings.get("ties", 0),
+                    points_for=int(settings.get("fpts", 0) or 0),
+                    points_against=int(settings.get("fpts_against", 0) or 0),
+                    players=roster_data.get("players", []),
+                    starters=roster_data.get("starters", []),
+                    reserve=roster_data.get("reserve", []),
+                    taxi=roster_data.get("taxi", []),
+                    settings=settings
+                )
+                self.db.add(roster)
+
+        logger.info(f"Synced {len(rosters_data)} rosters")
+
+    async def _sync_matchups(self, year: int, current_week: int):
+        """Sync matchups for all weeks."""
+        # Get season
+        result = await self.db.execute(
+            select(Season).where(Season.year == year)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            return
+
+        # Sync matchups for weeks 1 through current week
+        for week in range(1, min(current_week + 1, season.regular_season_weeks + 1)):
+            matchups_data = await self.client.get_matchups(week)
+            await self._process_week_matchups(matchups_data, season.id, week)
+
+        logger.info(f"Synced matchups for weeks 1-{current_week}")
+
+    async def _process_week_matchups(self, matchups_data: List[Dict[str, Any]], season_id: int, week: int):
+        """Process matchups for a specific week."""
+        # Group matchups by matchup_id
+        matchup_groups = {}
+        for matchup in matchups_data:
+            mid = matchup.get("matchup_id")
+            if mid:
+                if mid not in matchup_groups:
+                    matchup_groups[mid] = []
+                matchup_groups[mid].append(matchup)
+
+        # Create/update matchup records
+        for matchup_id, teams in matchup_groups.items():
+            if len(teams) != 2:
+                continue  # Skip bye weeks or incomplete matchups
+
+            team1, team2 = teams[0], teams[1]
+
+            # Get roster database IDs
+            roster1 = await self._get_roster_by_roster_id(season_id, team1.get("roster_id"))
+            roster2 = await self._get_roster_by_roster_id(season_id, team2.get("roster_id"))
+
+            if not roster1 or not roster2:
+                continue
+
+            result = await self.db.execute(
+                select(Matchup).where(
+                    Matchup.season_id == season_id,
+                    Matchup.week == week,
+                    Matchup.matchup_id == matchup_id
+                )
+            )
+            matchup = result.scalar_one_or_none()
+
+            points1 = team1.get("points", 0) or 0
+            points2 = team2.get("points", 0) or 0
+            winner_id = roster1.id if points1 > points2 else (roster2.id if points2 > points1 else None)
+
+            if matchup:
+                matchup.home_points = points1
+                matchup.away_points = points2
+                matchup.winner_roster_id = winner_id
+            else:
+                matchup = Matchup(
+                    season_id=season_id,
+                    week=week,
+                    matchup_id=matchup_id,
+                    home_roster_id=roster1.id,
+                    away_roster_id=roster2.id,
+                    home_points=points1,
+                    away_points=points2,
+                    winner_roster_id=winner_id
+                )
+                self.db.add(matchup)
+
+    async def _get_roster_by_roster_id(self, season_id: int, roster_id: int):
+        """Get roster by season and roster_id."""
+        result = await self.db.execute(
+            select(Roster).where(
+                Roster.season_id == season_id,
+                Roster.roster_id == roster_id
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _sync_drafts(self, drafts_data: List[Dict[str, Any]], year: int):
+        """Sync draft data."""
+        # Get season
+        result = await self.db.execute(
+            select(Season).where(Season.year == year)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            return
+
+        for draft_data in drafts_data:
+            draft_id = draft_data.get("draft_id")
+
+            result = await self.db.execute(
+                select(Draft).where(Draft.id == draft_id)
+            )
+            draft = result.scalar_one_or_none()
+
+            if draft:
+                draft.status = draft_data.get("status")
+                draft.settings = draft_data.get("settings", {})
+            else:
+                draft = Draft(
+                    id=draft_id,
+                    season_id=season.id,
+                    year=int(draft_data.get("season", year)),
+                    type=draft_data.get("type"),
+                    status=draft_data.get("status"),
+                    rounds=draft_data.get("settings", {}).get("rounds"),
+                    settings=draft_data.get("settings", {}),
+                    draft_order=draft_data.get("draft_order", {})
+                )
+                self.db.add(draft)
+
+            # Sync draft picks
+            await self._sync_draft_picks(draft_id)
+
+        logger.info(f"Synced {len(drafts_data)} drafts")
+
+    async def _sync_draft_picks(self, draft_id: str):
+        """Sync picks for a specific draft."""
+        picks_data = await self.client.get_draft_picks(draft_id)
+
+        for pick_data in picks_data:
+            pick_no = pick_data.get("pick_no")
+
+            result = await self.db.execute(
+                select(DraftPick).where(
+                    DraftPick.draft_id == draft_id,
+                    DraftPick.pick_no == pick_no
+                )
+            )
+            pick = result.scalar_one_or_none()
+
+            if pick:
+                pick.player_id = pick_data.get("player_id")
+                pick.pick_metadata = pick_data.get("metadata", {})
+            else:
+                pick = DraftPick(
+                    draft_id=draft_id,
+                    pick_no=pick_no,
+                    round=pick_data.get("round"),
+                    pick_in_round=pick_data.get("draft_slot"),
+                    roster_id=pick_data.get("roster_id"),
+                    player_id=pick_data.get("player_id"),
+                    pick_metadata=pick_data.get("metadata", {})
+                )
+                self.db.add(pick)
+
+    async def _sync_players(self):
+        """Sync all NFL players (large dataset)."""
+        logger.info("Starting player sync (this may take a while)...")
+
+        players_data = await self.client.get_all_players()
+
+        count = 0
+        for player_id, player_data in players_data.items():
+            # Only sync active players to reduce database size
+            if player_data.get("active", False):
+                result = await self.db.execute(
+                    select(Player).where(Player.id == player_id)
+                )
+                player = result.scalar_one_or_none()
+
+                full_name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+
+                if player:
+                    player.first_name = player_data.get("first_name")
+                    player.last_name = player_data.get("last_name")
+                    player.full_name = full_name
+                    player.position = player_data.get("position")
+                    player.team = player_data.get("team")
+                    player.number = player_data.get("number")
+                    player.age = player_data.get("age")
+                    player.status = player_data.get("status")
+                    player.injury_status = player_data.get("injury_status")
+                else:
+                    player = Player(
+                        id=player_id,
+                        first_name=player_data.get("first_name"),
+                        last_name=player_data.get("last_name"),
+                        full_name=full_name,
+                        position=player_data.get("position"),
+                        team=player_data.get("team"),
+                        number=self._safe_int(player_data.get("number")),
+                        age=self._safe_int(player_data.get("age")),
+                        height=player_data.get("height"),
+                        weight=self._safe_int(player_data.get("weight")),
+                        college=player_data.get("college"),
+                        years_exp=self._safe_int(player_data.get("years_exp")),
+                        status=player_data.get("status"),
+                        injury_status=player_data.get("injury_status")
+                    )
+                    self.db.add(player)
+
+                count += 1
+
+                # Commit in batches to avoid memory issues
+                if count % 500 == 0:
+                    await self.db.flush()
+                    logger.info(f"Synced {count} players...")
+
+        logger.info(f"Completed player sync: {count} players")

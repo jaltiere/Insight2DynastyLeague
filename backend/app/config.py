@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # Database
-    DATABASE_URL: str = "mysql+aiomysql://insight2dynasty_user:insight2dynasty_pass@localhost:3306/insight2dynasty"
+    DATABASE_URL: str = "mysql+aiomysql://insight2dynasty_user:insight2dynasty_pass@localhost:3307/insight2dynasty"
 
     # Sleeper API
     SLEEPER_LEAGUE_ID: str = "1313933992642220032"

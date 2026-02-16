@@ -1,21 +1,27 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.services.sleeper_client import sleeper_client
+from app.services.sync_service import SyncService
 
 router = APIRouter()
 
 
 @router.post("/sync/league")
 async def sync_league_data(db: AsyncSession = Depends(get_db)):
-    """Admin endpoint to sync data from Sleeper API."""
-    # TODO: Implement full sync logic
-    # This will:
-    # 1. Fetch league info
-    # 2. Fetch all rosters
-    # 3. Fetch all users
-    # 4. Fetch matchups for all weeks
-    # 5. Fetch all drafts and picks
-    # 6. Update database
+    """Admin endpoint to sync data from Sleeper API.
 
-    return {"message": "Sync endpoint - to be implemented", "status": "pending"}
+    This endpoint performs a full sync of:
+    - League configuration
+    - Users (owners)
+    - Current season data
+    - Rosters
+    - Matchups (all weeks)
+    - Drafts and draft picks
+    - NFL players
+    """
+    try:
+        sync_service = SyncService(db)
+        result = await sync_service.sync_league()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
