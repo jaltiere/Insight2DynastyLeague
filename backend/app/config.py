@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     SLEEPER_BASE_URL: str = "https://api.sleeper.app/v1"
 
     # CORS
-    CORS_ORIGINS: Union[list[str], str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: Union[list[str], str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176", "http://localhost:3000"]
 
     # API Rate Limiting
     SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
