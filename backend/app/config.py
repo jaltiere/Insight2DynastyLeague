@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Union
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -18,10 +20,18 @@ class Settings(BaseSettings):
     SLEEPER_BASE_URL: str = "https://api.sleeper.app/v1"
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: Union[list[str], str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # API Rate Limiting
     SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS_ORIGINS from comma-separated string or list."""
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
 
     class Config:
         env_file = ".env"
