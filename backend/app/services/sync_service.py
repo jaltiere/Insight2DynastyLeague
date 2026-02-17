@@ -122,7 +122,7 @@ class SyncService:
             await self._sync_rosters(rosters_data, current_season, users_data)
 
             # Sync matchups for all weeks
-            await self._sync_matchups(current_season, nfl_state.get("week", 1))
+            await self._sync_matchups_for_league(current_season, nfl_state.get("week", 1))
 
             # Sync drafts
             drafts_data = await self.client.get_drafts()
@@ -317,10 +317,6 @@ class SyncService:
         await self.db.flush()
         logger.info(f"Synced {len(rosters_data)} rosters")
 
-    async def _sync_matchups(self, year: int, current_week: int):
-        """Sync matchups for all weeks (uses default league_id)."""
-        await self._sync_matchups_for_league(year, current_week)
-
     async def _sync_matchups_for_league(self, year: int, through_week: int,
                                          league_id: str = None):
         """Sync matchups for all weeks up to through_week, including playoffs."""
@@ -480,6 +476,10 @@ class SyncService:
         for draft_data in drafts_data:
             draft_id = draft_data.get("draft_id")
 
+            # Fetch full draft details to get slot_to_roster_id
+            draft_detail = await self.client.get_draft(draft_id)
+            slot_to_roster = draft_detail.get("slot_to_roster_id") or draft_data.get("draft_order") or {}
+
             result = await self.db.execute(
                 select(Draft).where(Draft.id == draft_id)
             )
@@ -488,6 +488,7 @@ class SyncService:
             if draft:
                 draft.status = draft_data.get("status")
                 draft.settings = draft_data.get("settings", {})
+                draft.draft_order = slot_to_roster
             else:
                 draft = Draft(
                     id=draft_id,
@@ -497,7 +498,7 @@ class SyncService:
                     status=draft_data.get("status"),
                     rounds=draft_data.get("settings", {}).get("rounds"),
                     settings=draft_data.get("settings", {}),
-                    draft_order=draft_data.get("draft_order", {})
+                    draft_order=slot_to_roster
                 )
                 self.db.add(draft)
 
@@ -693,53 +694,3 @@ class SyncService:
 
         return None
 
-    async def sync_all_history(self) -> Dict[str, Any]:
-        """Sync all historical seasons by following the previous_league_id chain."""
-        try:
-            synced_seasons = []
-            league_id = self.client.league_id
-
-            while league_id:
-                league_data = await self.client.get_league(league_id)
-                year = int(league_data.get("season", 0))
-                status = league_data.get("status")
-
-                # Only sync completed seasons
-                if status != "complete":
-                    league_id = league_data.get("previous_league_id")
-                    continue
-
-                # Sync league, users, season, rosters for this historical season
-                await self._sync_league_data(league_data)
-
-                users_data = await self.client.get_users(league_id)
-                await self._sync_users(users_data)
-
-                await self._sync_season(league_data, year)
-
-                rosters_data = await self.client.get_rosters(league_id)
-                await self._sync_rosters(rosters_data, year, users_data)
-
-                # Flush to ensure rosters are visible for awards sync
-                await self.db.flush()
-
-                # Sync awards from bracket data
-                await self._sync_season_awards(league_id, year)
-
-                synced_seasons.append(year)
-                logger.info(f"Synced historical season {year}")
-
-                # Move to previous season
-                league_id = league_data.get("previous_league_id")
-
-            await self.db.commit()
-
-            return {
-                "status": "success",
-                "message": f"Synced {len(synced_seasons)} historical seasons",
-                "seasons": sorted(synced_seasons, reverse=True)
-            }
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error syncing historical data: {e}")
-            raise

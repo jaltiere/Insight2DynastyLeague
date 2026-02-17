@@ -30,8 +30,8 @@ export const api = {
     apiClient.get(`/matchups/head-to-head/${owner1}/${owner2}`),
 
   // Drafts
-  getAllDrafts: () => apiClient.get('/drafts'),
-  getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`),
+  getAllDrafts: () => apiClient.get('/drafts').then(res => res.data),
+  getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`).then(res => res.data),
 
   // League History
   getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
