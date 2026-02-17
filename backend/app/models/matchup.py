@@ -25,6 +25,7 @@ class Matchup(Base):
 
     # Result
     winner_roster_id = Column(Integer, ForeignKey("rosters.id"))
+    match_type = Column(String(20), default="regular")  # "regular", "playoff", "consolation"
 
     # Relationships
     home_roster = relationship("Roster", foreign_keys=[home_roster_id], back_populates="home_matchups")

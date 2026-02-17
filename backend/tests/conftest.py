@@ -164,6 +164,7 @@ async def create_matchup(
         "home_points": 120.5,
         "away_points": 110.3,
         "winner_roster_id": home_roster.id,
+        "match_type": "regular",
     }
     defaults.update(overrides)
     matchup = Matchup(**defaults)
