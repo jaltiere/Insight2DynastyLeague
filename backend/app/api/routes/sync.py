@@ -28,12 +28,11 @@ async def sync_league_data(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sync/history")
-async def sync_history(db: AsyncSession = Depends(get_db)):
-    """Admin endpoint to sync all historical seasons.
+async def sync_all_history(db: AsyncSession = Depends(get_db)):
+    """Admin endpoint to sync all historical seasons from Sleeper API.
 
-    Traverses the previous_league_id chain to sync
-    league data, rosters, and season awards for all
-    completed seasons.
+    Walks the previous_league_id chain to find and sync every season
+    from the league's inception to the current year.
     """
     try:
         sync_service = SyncService(db)
