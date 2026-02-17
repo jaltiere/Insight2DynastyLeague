@@ -34,7 +34,7 @@ export const api = {
   getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`),
 
   // League History
-  getAllHistory: () => apiClient.get('/league-history'),
+  getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
   getSeasonHistory: (season: number) => apiClient.get(`/league-history/${season}`),
 
   // Sync
