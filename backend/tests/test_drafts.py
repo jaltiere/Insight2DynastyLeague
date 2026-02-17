@@ -31,10 +31,10 @@ async def test_get_all_drafts_empty(client):
 async def test_get_draft_by_year_success(client, db_session):
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2024)
-    user = await create_user(db_session, id="u1", display_name="Owner One")
+    user = await create_user(db_session, id="u1", display_name="Owner One", avatar="abc123")
     roster = await create_roster(db_session, season, user, roster_id=1)
     player = await create_player(db_session, id="p1", full_name="Patrick Mahomes", position="QB", team="KC")
-    draft = await create_draft(db_session, season)
+    draft = await create_draft(db_session, season, draft_order={"1": 1})
     await create_draft_pick(db_session, draft, pick_no=1, round=1, pick_in_round=1, roster_id=roster.roster_id, player_id=player.id)
 
     response = await client.get("/api/drafts/2024")
@@ -42,6 +42,10 @@ async def test_get_draft_by_year_success(client, db_session):
     data = response.json()
     assert data["year"] == 2024
     assert data["total_picks"] == 1
+    assert data["draft_order"] == {"1": 1}
+    assert "slot_owners" in data
+    assert data["slot_owners"]["1"]["display_name"] == "Owner One"
+    assert data["slot_owners"]["1"]["avatar"] == "abc123"
     pick = data["picks"][0]
     assert pick["pick_no"] == 1
     assert pick["player_name"] == "Patrick Mahomes"
@@ -81,6 +85,23 @@ async def test_draft_pick_without_player(client, db_session):
     pick = response.json()["picks"][0]
     assert pick["player_id"] is None
     assert "player_name" not in pick
+
+
+async def test_slot_owners_fallback_for_unknown_roster(client, db_session):
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    draft = await create_draft(db_session, season, draft_order={"1": 1, "2": 999})
+    user = await create_user(db_session, id="u1", display_name="Owner One")
+    await create_roster(db_session, season, user, roster_id=1)
+
+    response = await client.get("/api/drafts/2024")
+    assert response.status_code == 200
+    data = response.json()
+    # Slot 1 has a known owner
+    assert data["slot_owners"]["1"]["display_name"] == "Owner One"
+    # Slot 2 has unknown roster, falls back to "Team 2"
+    assert data["slot_owners"]["2"]["display_name"] == "Team 2"
+    assert data["slot_owners"]["2"]["user_id"] is None
 
 
 async def test_draft_pick_without_roster_user(client, db_session):
