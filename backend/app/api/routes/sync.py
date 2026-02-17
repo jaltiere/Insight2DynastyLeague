@@ -25,3 +25,18 @@ async def sync_league_data(db: AsyncSession = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
+@router.post("/sync/history")
+async def sync_all_history(db: AsyncSession = Depends(get_db)):
+    """Admin endpoint to sync all historical seasons from Sleeper API.
+
+    Walks the previous_league_id chain to find and sync every season
+    from the league's inception to the current year.
+    """
+    try:
+        sync_service = SyncService(db)
+        result = await sync_service.sync_all_history()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"History sync failed: {str(e)}")

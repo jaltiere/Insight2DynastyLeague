@@ -27,8 +27,79 @@ class SyncService:
         except (ValueError, TypeError):
             return None
 
+    async def sync_all_history(self) -> Dict[str, Any]:
+        """Sync all historical seasons by walking the previous_league_id chain."""
+        try:
+            # Walk the chain to collect all league IDs (oldest first)
+            league_chain = []
+            current_id = self.client.league_id
+            while current_id:
+                league_data = await self.client.get_league(current_id)
+                league_chain.append((current_id, league_data))
+                current_id = league_data.get("previous_league_id")
+
+            # Reverse so we process oldest first
+            league_chain.reverse()
+
+            nfl_state = await self.client.get_nfl_state()
+            synced_seasons = []
+
+            for league_id, league_data in league_chain:
+                year = int(league_data.get("season"))
+                status = league_data.get("status")
+                settings = league_data.get("settings", {})
+                logger.info(f"Syncing {year} season (league_id={league_id}, status={status})")
+
+                # Sync league record
+                await self._sync_league_data(league_data)
+
+                # Sync users from this season's league
+                users_data = await self.client.get_users(league_id)
+                await self._sync_users(users_data)
+
+                # Sync season metadata
+                await self._sync_season(league_data, year)
+
+                # Sync rosters
+                rosters_data = await self.client.get_rosters(league_id)
+                await self._sync_rosters(rosters_data, year, users_data)
+
+                # Sync matchups (including playoffs for completed seasons)
+                if status == "complete":
+                    reg_weeks = settings.get("playoff_week_start", 15) - 1
+                    playoff_rounds = settings.get("playoff_rounds", 3)
+                    total_weeks = reg_weeks + playoff_rounds
+                    await self._sync_matchups_for_league(year, total_weeks, league_id)
+                else:
+                    # In-progress season: sync up to current week
+                    await self._sync_matchups_for_league(
+                        year, nfl_state.get("week", 1), league_id
+                    )
+
+                # Sync drafts
+                drafts_data = await self.client.get_drafts(league_id)
+                await self._sync_drafts(drafts_data, year)
+
+                synced_seasons.append(year)
+                await self.db.flush()
+
+            # Sync players once (shared across all seasons)
+            await self._sync_players()
+
+            await self.db.commit()
+
+            return {
+                "status": "success",
+                "message": f"Synced {len(synced_seasons)} seasons",
+                "seasons": synced_seasons
+            }
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error syncing historical data: {e}")
+            raise
+
     async def sync_league(self) -> Dict[str, Any]:
-        """Sync complete league data from Sleeper."""
+        """Sync complete league data from Sleeper (current season only)."""
         try:
             # Get current NFL state
             nfl_state = await self.client.get_nfl_state()
@@ -162,6 +233,7 @@ class SyncService:
             )
             self.db.add(season)
 
+        await self.db.flush()
         logger.info(f"Synced season {year}")
 
     async def _sync_rosters(self, rosters_data: List[Dict[str, Any]], year: int,
@@ -233,11 +305,16 @@ class SyncService:
                 )
                 self.db.add(roster)
 
+        await self.db.flush()
         logger.info(f"Synced {len(rosters_data)} rosters")
 
     async def _sync_matchups(self, year: int, current_week: int):
-        """Sync matchups for all weeks."""
-        # Get season
+        """Sync matchups for all weeks (uses default league_id)."""
+        await self._sync_matchups_for_league(year, current_week)
+
+    async def _sync_matchups_for_league(self, year: int, through_week: int,
+                                         league_id: str = None):
+        """Sync matchups for all weeks up to through_week, including playoffs."""
         result = await self.db.execute(
             select(Season).where(Season.year == year)
         )
@@ -245,14 +322,60 @@ class SyncService:
         if not season:
             return
 
-        # Sync matchups for weeks 1 through current week
-        for week in range(1, min(current_week + 1, season.regular_season_weeks + 1)):
-            matchups_data = await self.client.get_matchups(week)
-            await self._process_week_matchups(matchups_data, season.id, week)
+        last_week = min(through_week, season.regular_season_weeks + season.playoff_weeks)
 
-        logger.info(f"Synced matchups for weeks 1-{current_week}")
+        # Fetch bracket data if we're syncing playoff weeks
+        playoff_roster_ids = set()
+        consolation_roster_ids = set()
+        if last_week > season.regular_season_weeks:
+            playoff_roster_ids, consolation_roster_ids = await self._get_bracket_roster_ids(league_id)
 
-    async def _process_week_matchups(self, matchups_data: List[Dict[str, Any]], season_id: int, week: int):
+        for week in range(1, last_week + 1):
+            if week <= season.regular_season_weeks:
+                match_type = "regular"
+            else:
+                match_type = None  # Determined per-matchup from bracket data
+
+            matchups_data = await self.client.get_matchups(week, league_id)
+            await self._process_week_matchups(
+                matchups_data, season.id, week, match_type,
+                playoff_roster_ids, consolation_roster_ids
+            )
+
+        logger.info(f"Synced matchups for {year} weeks 1-{last_week}")
+
+    async def _get_bracket_roster_ids(self, league_id: str = None):
+        """Fetch bracket data and return sets of roster IDs for playoff vs consolation."""
+        playoff_roster_ids = set()
+        consolation_roster_ids = set()
+
+        try:
+            winners_bracket = await self.client.get_winners_bracket(league_id)
+            for entry in winners_bracket:
+                if entry.get("t1"):
+                    playoff_roster_ids.add(entry["t1"])
+                if entry.get("t2"):
+                    playoff_roster_ids.add(entry["t2"])
+        except Exception as e:
+            logger.warning(f"Could not fetch winners bracket: {e}")
+
+        try:
+            losers_bracket = await self.client.get_losers_bracket(league_id)
+            for entry in losers_bracket:
+                if entry.get("t1"):
+                    consolation_roster_ids.add(entry["t1"])
+                if entry.get("t2"):
+                    consolation_roster_ids.add(entry["t2"])
+        except Exception as e:
+            logger.warning(f"Could not fetch losers bracket: {e}")
+
+        return playoff_roster_ids, consolation_roster_ids
+
+    async def _process_week_matchups(self, matchups_data: List[Dict[str, Any]],
+                                      season_id: int, week: int,
+                                      match_type: str = "regular",
+                                      playoff_roster_ids: set = None,
+                                      consolation_roster_ids: set = None):
         """Process matchups for a specific week."""
         # Group matchups by matchup_id
         matchup_groups = {}
@@ -269,6 +392,22 @@ class SyncService:
                 continue  # Skip bye weeks or incomplete matchups
 
             team1, team2 = teams[0], teams[1]
+
+            # Classify playoff-week matchups using bracket data
+            effective_match_type = match_type
+            if effective_match_type is None:
+                sleeper_rid_1 = team1.get("roster_id")
+                sleeper_rid_2 = team2.get("roster_id")
+                if (playoff_roster_ids and
+                        (sleeper_rid_1 in playoff_roster_ids or
+                         sleeper_rid_2 in playoff_roster_ids)):
+                    effective_match_type = "playoff"
+                elif (consolation_roster_ids and
+                      (sleeper_rid_1 in consolation_roster_ids or
+                       sleeper_rid_2 in consolation_roster_ids)):
+                    effective_match_type = "consolation"
+                else:
+                    effective_match_type = "playoff"  # Fallback
 
             # Get roster database IDs
             roster1 = await self._get_roster_by_roster_id(season_id, team1.get("roster_id"))
@@ -294,6 +433,7 @@ class SyncService:
                 matchup.home_points = points1
                 matchup.away_points = points2
                 matchup.winner_roster_id = winner_id
+                matchup.match_type = effective_match_type
             else:
                 matchup = Matchup(
                     season_id=season_id,
@@ -303,7 +443,8 @@ class SyncService:
                     away_roster_id=roster2.id,
                     home_points=points1,
                     away_points=points2,
-                    winner_roster_id=winner_id
+                    winner_roster_id=winner_id,
+                    match_type=effective_match_type
                 )
                 self.db.add(matchup)
 
@@ -354,6 +495,7 @@ class SyncService:
             # Sync draft picks
             await self._sync_draft_picks(draft_id)
 
+        await self.db.flush()
         logger.info(f"Synced {len(drafts_data)} drafts")
 
     async def _sync_draft_picks(self, draft_id: str):
