@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
-from app.models import SeasonAward, Season, User
+from app.models import SeasonAward, Season, User, League, Roster
 from typing import List, Dict, Any
 
 router = APIRouter()
@@ -51,6 +51,24 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
     if not season:
         return None
 
+    # Get league metadata for division names
+    result = await db.execute(
+        select(League).where(League.id == season.league_id)
+    )
+    league = result.scalar_one_or_none()
+    league_metadata = (league.league_metadata if league else None) or {}
+
+    division_names = {}
+    for i in range(1, (season.num_divisions or 2) + 1):
+        division_names[str(i)] = league_metadata.get(f"division_{i}", f"Division {i}")
+
+    # Build roster_id -> team_name mapping for this season
+    result = await db.execute(
+        select(Roster).where(Roster.season_id == season.id)
+    )
+    rosters = result.scalars().all()
+    user_team_names = {r.user_id: r.team_name for r in rosters if r.team_name}
+
     # Get all awards for this season
     result = await db.execute(
         select(SeasonAward, User)
@@ -67,15 +85,18 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
     for award, user in awards_with_users:
         award_data = {
             "user_id": user.id,
-            "display_name": user.display_name or user.username,
+            "username": user.display_name or user.username,
+            "team_name": user_team_names.get(user.id),
         }
 
         if award.award_type == "champion":
             champion = award_data
         elif award.award_type == "division_winner":
+            # Map generic "Division 1" to actual name
+            div_num = award.award_detail.replace("Division ", "") if award.award_detail else None
             division_winners.append({
                 **award_data,
-                "division": award.award_detail
+                "division": division_names.get(div_num, award.award_detail),
             })
         elif award.award_type == "consolation":
             consolation_winner = award_data
@@ -87,6 +108,7 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
     return {
         "year": year,
         "num_divisions": season.num_divisions,
+        "division_names": division_names,
         "champion": champion,
         "division_winners": division_winners,
         "consolation_winner": consolation_winner

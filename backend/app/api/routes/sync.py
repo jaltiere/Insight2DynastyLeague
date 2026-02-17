@@ -25,3 +25,19 @@ async def sync_league_data(db: AsyncSession = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
+@router.post("/sync/history")
+async def sync_history(db: AsyncSession = Depends(get_db)):
+    """Admin endpoint to sync all historical seasons.
+
+    Traverses the previous_league_id chain to sync
+    league data, rosters, and season awards for all
+    completed seasons.
+    """
+    try:
+        sync_service = SyncService(db)
+        result = await sync_service.sync_all_history()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"History sync failed: {str(e)}")

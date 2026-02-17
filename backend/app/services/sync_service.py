@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.services.sleeper_client import sleeper_client
 from app.models import (
-    League, User, Season, Roster, Matchup, Player, Transaction, Draft, DraftPick
+    League, User, Season, Roster, Matchup, Player, Transaction, Draft, DraftPick,
+    SeasonAward
 )
 from typing import Dict, Any, List
 import logging
@@ -55,6 +56,14 @@ class SyncService:
             # Sync drafts
             drafts_data = await self.client.get_drafts()
             await self._sync_drafts(drafts_data, current_season)
+
+            # Flush to ensure rosters are visible for awards sync
+            await self.db.flush()
+
+            # Sync season awards from bracket data
+            await self._sync_season_awards(
+                league_data.get("league_id"), int(current_season)
+            )
 
             # Sync players (this is a large dataset)
             await self._sync_players()
@@ -440,3 +449,155 @@ class SyncService:
                     logger.info(f"Synced {count} players...")
 
         logger.info(f"Completed player sync: {count} players")
+
+    async def _sync_season_awards(self, league_id: str, year: int):
+        """Sync season awards (champion, division winners, consolation) from bracket data."""
+        # Get season
+        result = await self.db.execute(
+            select(Season).where(Season.year == year)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            logger.warning(f"Season {year} not found, skipping awards sync")
+            return
+
+        # Clear existing awards for this season to avoid duplicates on re-sync
+        result = await self.db.execute(
+            select(SeasonAward).where(SeasonAward.season_id == season.id)
+        )
+        existing_awards = result.scalars().all()
+        for award in existing_awards:
+            await self.db.delete(award)
+
+        # Get rosters for roster_id -> user_id mapping
+        result = await self.db.execute(
+            select(Roster).where(Roster.season_id == season.id)
+        )
+        rosters = result.scalars().all()
+        roster_to_user = {r.roster_id: r.user_id for r in rosters}
+
+        # --- Champion from winners bracket ---
+        try:
+            winners_bracket = await self.client.get_winners_bracket(league_id)
+            champion_roster_id = self._get_bracket_winner(winners_bracket)
+            if champion_roster_id and champion_roster_id in roster_to_user:
+                self.db.add(SeasonAward(
+                    season_id=season.id,
+                    user_id=roster_to_user[champion_roster_id],
+                    award_type="champion",
+                    roster_id=champion_roster_id,
+                ))
+        except Exception as e:
+            logger.warning(f"Could not fetch winners bracket for {year}: {e}")
+
+        # --- Consolation winner from losers bracket ---
+        try:
+            losers_bracket = await self.client.get_losers_bracket(league_id)
+            consolation_roster_id = self._get_bracket_winner(losers_bracket)
+            if consolation_roster_id and consolation_roster_id in roster_to_user:
+                self.db.add(SeasonAward(
+                    season_id=season.id,
+                    user_id=roster_to_user[consolation_roster_id],
+                    award_type="consolation",
+                    roster_id=consolation_roster_id,
+                ))
+        except Exception as e:
+            logger.warning(f"Could not fetch losers bracket for {year}: {e}")
+
+        # --- Division winners from roster standings ---
+        divisions: Dict[int, List[Roster]] = {}
+        for roster in rosters:
+            div = roster.division
+            if div is not None:
+                divisions.setdefault(div, []).append(roster)
+
+        for div_num, div_rosters in divisions.items():
+            # Best record: most wins, then most points_for as tiebreaker
+            div_rosters.sort(key=lambda r: (r.wins or 0, r.points_for or 0), reverse=True)
+            winner = div_rosters[0]
+            if winner.user_id:
+                self.db.add(SeasonAward(
+                    season_id=season.id,
+                    user_id=winner.user_id,
+                    award_type="division_winner",
+                    award_detail=f"Division {div_num}",
+                    roster_id=winner.roster_id,
+                    final_record=f"{winner.wins or 0}-{winner.losses or 0}-{winner.ties or 0}",
+                    points_for=winner.points_for,
+                ))
+
+        logger.info(f"Synced season awards for {year}")
+
+    @staticmethod
+    def _get_bracket_winner(bracket: List[Dict[str, Any]]) -> int | None:
+        """Find the winner of a bracket (champion or consolation champion).
+
+        The championship/consolation final is the match in the highest round
+        with p=1 (1st place match). The 'w' field is the winning roster_id.
+        """
+        if not bracket:
+            return None
+
+        max_round = max(m.get("r", 0) for m in bracket)
+        # Find the 1st place match in the final round
+        for match in bracket:
+            if match.get("r") == max_round and match.get("p") == 1:
+                return match.get("w")
+
+        # Fallback: if no p=1 match, look for the only match in the final round
+        final_matches = [m for m in bracket if m.get("r") == max_round]
+        if len(final_matches) == 1:
+            return final_matches[0].get("w")
+
+        return None
+
+    async def sync_all_history(self) -> Dict[str, Any]:
+        """Sync all historical seasons by following the previous_league_id chain."""
+        try:
+            synced_seasons = []
+            league_id = self.client.league_id
+
+            while league_id:
+                league_data = await self.client.get_league(league_id)
+                year = int(league_data.get("season", 0))
+                status = league_data.get("status")
+
+                # Only sync completed seasons
+                if status != "complete":
+                    league_id = league_data.get("previous_league_id")
+                    continue
+
+                # Sync league, users, season, rosters for this historical season
+                await self._sync_league_data(league_data)
+
+                users_data = await self.client.get_users(league_id)
+                await self._sync_users(users_data)
+
+                await self._sync_season(league_data, year)
+
+                rosters_data = await self.client.get_rosters(league_id)
+                await self._sync_rosters(rosters_data, year, users_data)
+
+                # Flush to ensure rosters are visible for awards sync
+                await self.db.flush()
+
+                # Sync awards from bracket data
+                await self._sync_season_awards(league_id, year)
+
+                synced_seasons.append(year)
+                logger.info(f"Synced historical season {year}")
+
+                # Move to previous season
+                league_id = league_data.get("previous_league_id")
+
+            await self.db.commit()
+
+            return {
+                "status": "success",
+                "message": f"Synced {len(synced_seasons)} historical seasons",
+                "seasons": sorted(synced_seasons, reverse=True)
+            }
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error syncing historical data: {e}")
+            raise
