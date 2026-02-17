@@ -28,6 +28,10 @@ export const api = {
   // Matchups
   getHeadToHead: (owner1: string, owner2: string) =>
     apiClient.get(`/matchups/head-to-head/${owner1}/${owner2}`),
+  getH2HMatrix: (matchType?: string) =>
+    apiClient.get('/matchups/head-to-head-matrix', {
+      params: matchType ? { match_type: matchType } : {},
+    }),
 
   // Drafts
   getAllDrafts: () => apiClient.get('/drafts'),
