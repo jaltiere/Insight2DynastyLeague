@@ -50,6 +50,9 @@ export const api = {
     limit?: number;
   }) => apiClient.get('/player-records', { params }).then(res => res.data),
 
+  // Taxi Squads
+  getTaxiSquads: () => apiClient.get('/taxi-squads').then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
