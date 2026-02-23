@@ -41,6 +41,15 @@ export const api = {
   getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
   getSeasonHistory: (season: number) => apiClient.get(`/league-history/${season}`),
 
+  // Player Records
+  getPlayerRecords: (params?: {
+    view?: string;
+    match_type?: string;
+    roster_type?: string;
+    position?: string;
+    limit?: number;
+  }) => apiClient.get('/player-records', { params }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
