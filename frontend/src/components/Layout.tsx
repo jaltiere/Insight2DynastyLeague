@@ -14,7 +14,7 @@ export default function Layout() {
                 Standings
               </Link>
               <Link to="/players" className="hover:text-blue-200 transition">
-                Players
+                Player Records
               </Link>
               <Link to="/head-to-head" className="hover:text-blue-200 transition">
                 H2H

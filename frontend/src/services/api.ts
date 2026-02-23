@@ -34,12 +34,21 @@ export const api = {
     }),
 
   // Drafts
-  getAllDrafts: () => apiClient.get('/drafts'),
-  getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`),
+  getAllDrafts: () => apiClient.get('/drafts').then(res => res.data),
+  getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`).then(res => res.data),
 
   // League History
   getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
   getSeasonHistory: (season: number) => apiClient.get(`/league-history/${season}`),
+
+  // Player Records
+  getPlayerRecords: (params?: {
+    view?: string;
+    match_type?: string;
+    roster_type?: string;
+    position?: string;
+    limit?: number;
+  }) => apiClient.get('/player-records', { params }).then(res => res.data),
 
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),

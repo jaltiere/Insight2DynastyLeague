@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
 from app.models import Draft, DraftPick, Player, Roster, User
+from collections import Counter
 from typing import List, Dict, Any
 
 router = APIRouter()
@@ -54,7 +55,11 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
 
     # Get all players, rosters, and users to enrich pick data
     player_ids = [p.player_id for p in picks if p.player_id]
-    roster_ids = [p.roster_id for p in picks if p.roster_id]
+    draft_order = draft.draft_order or {}
+    roster_ids = list(set(
+        [p.roster_id for p in picks if p.roster_id] +
+        [rid for rid in draft_order.values() if rid]
+    ))
 
     # Fetch players
     player_map = {}
@@ -76,8 +81,45 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         for roster, user in result.all():
             roster_to_user[roster.roster_id] = {
                 "user_id": user.id,
-                "display_name": user.display_name or user.username
+                "display_name": user.display_name or user.username,
+                "avatar": user.avatar
             }
+
+    # Build slot_owners map from draft_order, or derive from picks if empty
+    slot_owners = {}
+    if draft_order:
+        for slot, roster_id in draft_order.items():
+            owner = roster_to_user.get(roster_id)
+            if owner:
+                slot_owners[slot] = owner
+            else:
+                slot_owners[slot] = {
+                    "user_id": None,
+                    "display_name": f"Team {slot}",
+                    "avatar": None
+                }
+    elif picks:
+        # Derive original slot owners: for each slot, the most common roster_id
+        # across all rounds is likely the original owner (traded picks are minority)
+        slot_rosters: Dict[int, list] = {}
+        for pick in picks:
+            slot_rosters.setdefault(pick.pick_in_round, []).append(pick.roster_id)
+        for slot, rid_list in sorted(slot_rosters.items()):
+            most_common_rid = Counter(rid_list).most_common(1)[0][0]
+            owner = roster_to_user.get(most_common_rid)
+            if owner:
+                slot_owners[str(slot)] = owner
+            else:
+                slot_owners[str(slot)] = {
+                    "user_id": None,
+                    "display_name": f"Team {slot}",
+                    "avatar": None
+                }
+        # Also build a synthetic draft_order for traded-pick detection
+        draft_order = {
+            str(slot): Counter(rid_list).most_common(1)[0][0]
+            for slot, rid_list in slot_rosters.items()
+        }
 
     # Build picks list with enriched data
     picks_list = []
@@ -116,6 +158,8 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         "type": draft.type,
         "status": draft.status,
         "rounds": draft.rounds,
+        "draft_order": draft_order,
+        "slot_owners": slot_owners,
         "total_picks": len(picks_list),
         "picks": picks_list
     }

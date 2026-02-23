@@ -13,7 +13,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import (
     League, User, Season, Roster, Matchup, Player,
-    Draft, DraftPick, SeasonAward,
+    Draft, DraftPick, SeasonAward, MatchupPlayerPoint,
 )
 
 
@@ -231,6 +231,23 @@ async def create_draft_pick(db: AsyncSession, draft: Draft, **overrides) -> Draf
     db.add(pick)
     await db.flush()
     return pick
+
+
+async def create_matchup_player_point(
+    db: AsyncSession, matchup: Matchup, roster: Roster, player: Player, **overrides
+) -> MatchupPlayerPoint:
+    defaults = {
+        "matchup_id": matchup.id,
+        "roster_id": roster.id,
+        "player_id": player.id,
+        "points": 15.0,
+        "is_starter": True,
+    }
+    defaults.update(overrides)
+    mpp = MatchupPlayerPoint(**defaults)
+    db.add(mpp)
+    await db.flush()
+    return mpp
 
 
 async def create_season_award(

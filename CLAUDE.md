@@ -136,8 +136,10 @@ All endpoints under `/api` prefix:
 
 ### Workflow Rules
 1. **Never commit directly to main** - All changes must go through pull requests
-2. **Create a branch for each feature/bug**:
+2. **Always pull latest main before creating a branch**:
    ```bash
+   git checkout main
+   git pull origin main
    git checkout -b feature/feature-name
    # or
    git checkout -b bugfix/bug-description
@@ -162,6 +164,10 @@ All endpoints under `/api` prefix:
 
 ### Example Workflow
 ```bash
+# Always start from latest main
+git checkout main
+git pull origin main
+
 # Create feature branch
 git checkout -b feature/add-owner-stats
 
