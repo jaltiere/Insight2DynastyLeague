@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, JSON, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, BigInteger, JSON, DateTime, ForeignKey
 from datetime import datetime
 from app.database import Base
 
@@ -16,9 +16,14 @@ class Transaction(Base):
     # Transaction details
     week = Column(Integer)
     roster_ids = Column(JSON)  # List of roster IDs involved
-    players = Column(JSON)  # Player movements
+    adds = Column(JSON)  # {player_id: roster_id} for added players
+    drops = Column(JSON)  # {player_id: roster_id} for dropped players
+    players = Column(JSON)  # Player movements (legacy/raw)
     picks = Column(JSON)  # Draft pick movements
     settings = Column(JSON)  # Additional transaction settings
+    waiver_bid = Column(Integer, nullable=True)  # FAAB bid amount
+    status_updated = Column(BigInteger, nullable=True)  # Sleeper timestamp (ms)
+    metadata_notes = Column(String(500), nullable=True)  # Failure reason or notes
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)

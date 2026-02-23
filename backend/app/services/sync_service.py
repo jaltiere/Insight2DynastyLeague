@@ -88,6 +88,13 @@ class SyncService:
                 if status == "complete":
                     await self._sync_season_awards(league_id, year)
 
+                # Sync transactions
+                if status == "complete":
+                    tx_total_weeks = reg_weeks + playoff_rounds
+                else:
+                    tx_total_weeks = nfl_state.get("week", 1)
+                await self._sync_transactions(league_id, year, tx_total_weeks)
+
                 synced_seasons.append(year)
                 await self.db.flush()
 
@@ -141,6 +148,13 @@ class SyncService:
             # Sync season awards from bracket data
             await self._sync_season_awards(
                 league_data.get("league_id"), int(current_season)
+            )
+
+            # Sync transactions
+            await self._sync_transactions(
+                league_data.get("league_id"),
+                int(current_season),
+                nfl_state.get("week", 1)
             )
 
             # Sync players (this is a large dataset)
@@ -716,6 +730,69 @@ class SyncService:
                 ))
 
         logger.info(f"Synced season awards for {year}")
+
+    async def _sync_transactions(self, league_id: str, year: int, through_week: int):
+        """Sync transactions for a season."""
+        result = await self.db.execute(
+            select(Season).where(Season.year == year)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            return
+
+        count = 0
+        for week in range(1, through_week + 1):
+            try:
+                txns_data = await self.client.get_transactions(week, league_id)
+            except Exception as e:
+                logger.warning(f"Could not fetch transactions for {year} week {week}: {e}")
+                continue
+
+            for txn_data in txns_data:
+                txn_id = txn_data.get("transaction_id")
+                if not txn_id:
+                    continue
+
+                result = await self.db.execute(
+                    select(Transaction).where(Transaction.id == str(txn_id))
+                )
+                existing = result.scalar_one_or_none()
+
+                txn_settings = txn_data.get("settings") or {}
+                waiver_bid = txn_settings.get("waiver_bid")
+                txn_metadata = txn_data.get("metadata") or {}
+                metadata_notes = txn_metadata.get("notes")
+
+                if existing:
+                    existing.status = txn_data.get("status")
+                    existing.adds = txn_data.get("adds")
+                    existing.drops = txn_data.get("drops")
+                    existing.picks = txn_data.get("draft_picks")
+                    existing.settings = txn_settings
+                    existing.waiver_bid = waiver_bid
+                    existing.status_updated = txn_data.get("status_updated")
+                    existing.metadata_notes = metadata_notes
+                else:
+                    self.db.add(Transaction(
+                        id=str(txn_id),
+                        season_id=season.id,
+                        type=txn_data.get("type"),
+                        status=txn_data.get("status"),
+                        week=week,
+                        roster_ids=txn_data.get("roster_ids"),
+                        adds=txn_data.get("adds"),
+                        drops=txn_data.get("drops"),
+                        players=txn_data.get("players"),
+                        picks=txn_data.get("draft_picks"),
+                        settings=txn_settings,
+                        waiver_bid=waiver_bid,
+                        status_updated=txn_data.get("status_updated"),
+                        metadata_notes=metadata_notes,
+                    ))
+                    count += 1
+
+        await self.db.flush()
+        logger.info(f"Synced {count} new transactions for {year}")
 
     @staticmethod
     def _get_bracket_winner(bracket: List[Dict[str, Any]]) -> int | None:

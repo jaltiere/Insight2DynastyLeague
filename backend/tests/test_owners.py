@@ -204,3 +204,83 @@ async def test_owner_details_season_categories(client, db_session):
     assert season_data["consolation"]["wins"] == 0
     # Legacy flat fields still present (regular season)
     assert season_data["wins"] == 1
+
+
+async def test_owner_details_division_name(client, db_session):
+    """Test that season breakdown includes division_name from league metadata."""
+    league = await create_league(db_session, league_metadata={
+        "division_1": "East",
+        "division_2": "West",
+    })
+    season = await create_season(db_session, league, num_divisions=2)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1, division=2)
+
+    response = await client.get("/api/owners/u1")
+    assert response.status_code == 200
+    season_data = response.json()["seasons"][0]
+    assert season_data["division"] == 2
+    assert season_data["division_name"] == "West"
+
+
+async def test_owner_details_division_name_fallback(client, db_session):
+    """Test that division_name falls back to 'Division N' when metadata is missing."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1, division=1)
+
+    response = await client.get("/api/owners/u1")
+    assert response.status_code == 200
+    season_data = response.json()["seasons"][0]
+    assert season_data["division_name"] == "Division 1"
+
+
+async def test_owner_details_median_record(client, db_session):
+    """Test that season breakdown includes median wins/losses/ties."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user1 = await create_user(db_session, id="u1", display_name="Owner One")
+    user2 = await create_user(db_session, id="u2", display_name="Owner Two")
+    user3 = await create_user(db_session, id="u3", display_name="Owner Three")
+    user4 = await create_user(db_session, id="u4", display_name="Owner Four")
+    r1 = await create_roster(db_session, season, user1, roster_id=1)
+    r2 = await create_roster(db_session, season, user2, roster_id=2)
+    r3 = await create_roster(db_session, season, user3, roster_id=3)
+    r4 = await create_roster(db_session, season, user4, roster_id=4)
+
+    # Week 1: scores 130, 110, 90, 70 -> median = 100
+    # u1 (130) > 100 -> median win, u2 (110) > 100 -> median win
+    await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1,
+                         home_points=130, away_points=110, winner_roster_id=r1.id)
+    await create_matchup(db_session, season, r3, r4, week=1, matchup_id=2,
+                         home_points=90, away_points=70, winner_roster_id=r3.id)
+
+    # Week 2: scores 80, 120, 100, 60 -> median = 90
+    # u1 (80) < 90 -> median loss
+    await create_matchup(db_session, season, r1, r2, week=2, matchup_id=1,
+                         home_points=80, away_points=120, winner_roster_id=r2.id)
+    await create_matchup(db_session, season, r3, r4, week=2, matchup_id=2,
+                         home_points=100, away_points=60, winner_roster_id=r3.id)
+
+    response = await client.get("/api/owners/u1")
+    assert response.status_code == 200
+    season_data = response.json()["seasons"][0]
+    assert season_data["median_wins"] == 1
+    assert season_data["median_losses"] == 1
+    assert season_data["median_ties"] == 0
+
+
+async def test_owner_details_median_record_no_matchups(client, db_session):
+    """Test that median record is 0-0-0 when no matchups exist."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1)
+
+    response = await client.get("/api/owners/u1")
+    assert response.status_code == 200
+    season_data = response.json()["seasons"][0]
+    assert season_data["median_wins"] == 0
+    assert season_data["median_losses"] == 0
+    assert season_data["median_ties"] == 0
