@@ -30,9 +30,13 @@ interface SeasonRecord {
   year: number;
   team_name: string | null;
   division: number;
+  division_name: string;
   regular_season: CategoryRecord;
   playoff: CategoryRecord;
   consolation: CategoryRecord;
+  median_wins: number;
+  median_losses: number;
+  median_ties: number;
 }
 
 const categories: { key: RecordCategory; label: string }[] = [
@@ -267,11 +271,12 @@ export default function Owners() {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Year</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Name</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Div</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Division</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">W</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">L</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">T</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Win%</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">vs Median</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PF</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PA</th>
                   </tr>
@@ -283,12 +288,15 @@ export default function Owners() {
                       <tr key={season.year} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{season.year}</td>
                         <td className="px-4 py-3 text-sm text-gray-900">{season.team_name || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-center">{season.division}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{season.division_name}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.wins}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.losses}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.ties}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-center">
                           {(rec.win_percentage * 100).toFixed(1)}%
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-center">
+                          {season.median_wins}-{season.median_losses}-{season.median_ties}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_for.toFixed(2)}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_against.toFixed(2)}</td>
