@@ -103,10 +103,13 @@ async def test_season_history_includes_division_names_from_metadata(client, db_s
         league_metadata={"division_1": "Havoc", "division_2": "Vengeance"},
     )
     season = await create_season(db_session, league, year=2024, num_divisions=2)
-    user = await create_user(db_session, id="u1")
-    await create_roster(db_session, season, user, roster_id=1)
+    champ = await create_user(db_session, id="u1")
+    div_winner = await create_user(db_session, id="u2", display_name="Div Winner")
+    await create_roster(db_session, season, champ, roster_id=1)
+    await create_roster(db_session, season, div_winner, roster_id=2)
+    await create_season_award(db_session, season, champ, award_type="champion")
     await create_season_award(
-        db_session, season, user,
+        db_session, season, div_winner,
         award_type="division_winner", award_detail="Division 1",
     )
 
@@ -117,3 +120,25 @@ async def test_season_history_includes_division_names_from_metadata(client, db_s
     assert data["division_names"]["2"] == "Vengeance"
     # Division winner should use actual name, not generic
     assert data["division_winners"][0]["division"] == "Havoc"
+
+
+async def test_incomplete_season_without_champion_excluded(client, db_session):
+    """Seasons with awards but no champion should be excluded from history."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1)
+    # Only a division winner, no champion yet
+    await create_season_award(
+        db_session, season, user,
+        award_type="division_winner", award_detail="Division 1",
+    )
+
+    # Should not appear in all-history listing
+    response = await client.get("/api/league-history")
+    assert response.status_code == 200
+    assert response.json()["total_seasons"] == 0
+
+    # Should return 404 for direct season lookup
+    response = await client.get("/api/league-history/2025")
+    assert response.status_code == 404
