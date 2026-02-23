@@ -13,7 +13,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import (
     League, User, Season, Roster, Matchup, Player,
-    Draft, DraftPick, SeasonAward, MatchupPlayerPoint,
+    Draft, DraftPick, SeasonAward, MatchupPlayerPoint, Transaction,
 )
 
 
@@ -248,6 +248,31 @@ async def create_matchup_player_point(
     db.add(mpp)
     await db.flush()
     return mpp
+
+
+async def create_transaction(
+    db: AsyncSession, season: Season, **overrides
+) -> Transaction:
+    defaults = {
+        "id": "txn_001",
+        "season_id": season.id,
+        "type": "waiver",
+        "status": "complete",
+        "week": 1,
+        "roster_ids": [1],
+        "adds": {"player_001": 1},
+        "drops": None,
+        "players": None,
+        "picks": None,
+        "settings": {},
+        "waiver_bid": 5,
+        "status_updated": 1700000000000,
+    }
+    defaults.update(overrides)
+    txn = Transaction(**defaults)
+    db.add(txn)
+    await db.flush()
+    return txn
 
 
 async def create_season_award(

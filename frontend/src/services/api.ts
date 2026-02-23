@@ -53,6 +53,13 @@ export const api = {
   // Taxi Squads
   getTaxiSquads: () => apiClient.get('/taxi-squads').then(res => res.data),
 
+  // Seasons
+  getSeasons: () => apiClient.get('/seasons').then(res => res.data),
+
+  // Transactions
+  getRecentTransactions: (limit: number = 20) =>
+    apiClient.get('/transactions/recent', { params: { limit } }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
