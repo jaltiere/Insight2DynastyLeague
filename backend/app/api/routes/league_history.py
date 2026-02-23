@@ -101,8 +101,8 @@ async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
         elif award.award_type == "consolation":
             consolation_winner = award_data
 
-    # If no awards exist, return None
-    if not champion and not division_winners and not consolation_winner:
+    # Only show seasons where a champion has been determined
+    if not champion:
         return None
 
     return {
