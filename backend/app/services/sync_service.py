@@ -3,7 +3,7 @@ from sqlalchemy import select
 from app.services.sleeper_client import sleeper_client
 from app.models import (
     League, User, Season, Roster, Matchup, Player, Transaction, Draft, DraftPick,
-    SeasonAward
+    SeasonAward, MatchupPlayerPoint
 )
 from typing import Dict, Any, List
 import logging
@@ -31,7 +31,7 @@ class SyncService:
     async def sync_all_history(self) -> Dict[str, Any]:
         """Sync all historical seasons by walking the previous_league_id chain."""
         try:
-            # Walk the chain to collect all league IDs (oldest first)
+            # Walk the chain to collect all league IDs
             league_chain = []
             current_id = self.client.league_id
             while current_id:
@@ -65,6 +65,9 @@ class SyncService:
                 rosters_data = await self.client.get_rosters(league_id)
                 await self._sync_rosters(rosters_data, year, users_data)
 
+                # Flush to ensure rosters are visible for matchup/awards sync
+                await self.db.flush()
+
                 # Sync matchups (including playoffs for completed seasons)
                 if status == "complete":
                     reg_weeks = settings.get("playoff_week_start", 15) - 1
@@ -80,6 +83,10 @@ class SyncService:
                 # Sync drafts
                 drafts_data = await self.client.get_drafts(league_id)
                 await self._sync_drafts(drafts_data, year)
+
+                # Sync season awards from bracket data (completed seasons only)
+                if status == "complete":
+                    await self._sync_season_awards(league_id, year)
 
                 synced_seasons.append(year)
                 await self.db.flush()
@@ -122,7 +129,7 @@ class SyncService:
             await self._sync_rosters(rosters_data, current_season, users_data)
 
             # Sync matchups for all weeks
-            await self._sync_matchups(current_season, nfl_state.get("week", 1))
+            await self._sync_matchups_for_league(current_season, nfl_state.get("week", 1))
 
             # Sync drafts
             drafts_data = await self.client.get_drafts()
@@ -317,10 +324,6 @@ class SyncService:
         await self.db.flush()
         logger.info(f"Synced {len(rosters_data)} rosters")
 
-    async def _sync_matchups(self, year: int, current_week: int):
-        """Sync matchups for all weeks (uses default league_id)."""
-        await self._sync_matchups_for_league(year, current_week)
-
     async def _sync_matchups_for_league(self, year: int, through_week: int,
                                          league_id: str = None):
         """Sync matchups for all weeks up to through_week, including playoffs."""
@@ -457,6 +460,13 @@ class SyncService:
                 )
                 self.db.add(matchup)
 
+            # Flush to get matchup.id for player points
+            await self.db.flush()
+
+            # Store per-player points for both teams
+            await self._sync_player_points(matchup, roster1, team1)
+            await self._sync_player_points(matchup, roster2, team2)
+
     async def _get_roster_by_roster_id(self, season_id: int, roster_id: int):
         """Get roster by season and roster_id."""
         result = await self.db.execute(
@@ -466,6 +476,38 @@ class SyncService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def _sync_player_points(self, matchup: Matchup, roster: Roster,
+                                   team_data: Dict[str, Any]):
+        """Store per-player points for a team in a matchup."""
+        players_points = team_data.get("players_points") or {}
+        starters = set(team_data.get("starters") or [])
+
+        if not players_points:
+            return
+
+        for player_id, points in players_points.items():
+            # Check for existing record
+            result = await self.db.execute(
+                select(MatchupPlayerPoint).where(
+                    MatchupPlayerPoint.matchup_id == matchup.id,
+                    MatchupPlayerPoint.roster_id == roster.id,
+                    MatchupPlayerPoint.player_id == str(player_id)
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.points = points or 0.0
+                existing.is_starter = str(player_id) in starters
+            else:
+                self.db.add(MatchupPlayerPoint(
+                    matchup_id=matchup.id,
+                    roster_id=roster.id,
+                    player_id=str(player_id),
+                    points=points or 0.0,
+                    is_starter=str(player_id) in starters,
+                ))
 
     async def _sync_drafts(self, drafts_data: List[Dict[str, Any]], year: int):
         """Sync draft data."""
@@ -480,6 +522,10 @@ class SyncService:
         for draft_data in drafts_data:
             draft_id = draft_data.get("draft_id")
 
+            # Fetch full draft details to get slot_to_roster_id
+            draft_detail = await self.client.get_draft(draft_id)
+            slot_to_roster = draft_detail.get("slot_to_roster_id") or draft_data.get("draft_order") or {}
+
             result = await self.db.execute(
                 select(Draft).where(Draft.id == draft_id)
             )
@@ -488,6 +534,7 @@ class SyncService:
             if draft:
                 draft.status = draft_data.get("status")
                 draft.settings = draft_data.get("settings", {})
+                draft.draft_order = slot_to_roster
             else:
                 draft = Draft(
                     id=draft_id,
@@ -497,7 +544,7 @@ class SyncService:
                     status=draft_data.get("status"),
                     rounds=draft_data.get("settings", {}).get("rounds"),
                     settings=draft_data.get("settings", {}),
-                    draft_order=draft_data.get("draft_order", {})
+                    draft_order=slot_to_roster
                 )
                 self.db.add(draft)
 
@@ -693,53 +740,3 @@ class SyncService:
 
         return None
 
-    async def sync_all_history(self) -> Dict[str, Any]:
-        """Sync all historical seasons by following the previous_league_id chain."""
-        try:
-            synced_seasons = []
-            league_id = self.client.league_id
-
-            while league_id:
-                league_data = await self.client.get_league(league_id)
-                year = int(league_data.get("season", 0))
-                status = league_data.get("status")
-
-                # Only sync completed seasons
-                if status != "complete":
-                    league_id = league_data.get("previous_league_id")
-                    continue
-
-                # Sync league, users, season, rosters for this historical season
-                await self._sync_league_data(league_data)
-
-                users_data = await self.client.get_users(league_id)
-                await self._sync_users(users_data)
-
-                await self._sync_season(league_data, year)
-
-                rosters_data = await self.client.get_rosters(league_id)
-                await self._sync_rosters(rosters_data, year, users_data)
-
-                # Flush to ensure rosters are visible for awards sync
-                await self.db.flush()
-
-                # Sync awards from bracket data
-                await self._sync_season_awards(league_id, year)
-
-                synced_seasons.append(year)
-                logger.info(f"Synced historical season {year}")
-
-                # Move to previous season
-                league_id = league_data.get("previous_league_id")
-
-            await self.db.commit()
-
-            return {
-                "status": "success",
-                "message": f"Synced {len(synced_seasons)} historical seasons",
-                "seasons": sorted(synced_seasons, reverse=True)
-            }
-        except Exception as e:
-            await self.db.rollback()
-            logger.error(f"Error syncing historical data: {e}")
-            raise
