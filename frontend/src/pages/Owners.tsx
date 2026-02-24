@@ -222,7 +222,7 @@ export default function Owners() {
                   <tr
                     key={owner.user_id}
                     className={`cursor-pointer transition-colors ${
-                      selectedOwnerId === owner.user_id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      selectedOwnerId === owner.user_id ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50'
                     }`}
                     onClick={() =>
                       setSelectedOwnerId(

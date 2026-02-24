@@ -1,3 +1,4 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Union
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     SLEEPER_BASE_URL: str = "https://api.sleeper.app/v1"
 
     # CORS
-    CORS_ORIGINS: Union[list[str], str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176", "http://localhost:3000"]
+    CORS_ORIGINS: Union[list[str], str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176", "http://localhost:5177", "http://localhost:5178", "http://localhost:5179", "http://localhost:3000"]
 
     # API Rate Limiting
     SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
         return v
 
     class Config:
-        env_file = ".env"
+        env_file = Path(__file__).resolve().parent.parent / ".env"
         case_sensitive = True
 
 
