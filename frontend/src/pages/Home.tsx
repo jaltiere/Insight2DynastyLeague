@@ -88,6 +88,8 @@ function TransactionCard({ txn }: { txn: any }) {
     ? 'Free Agent'
     : txn.type?.charAt(0).toUpperCase() + txn.type?.slice(1);
 
+  const isTrade = txn.type === 'trade';
+
   return (
     <div className="bg-white rounded-lg shadow p-3">
       <div className="flex items-center justify-between mb-1">
@@ -101,43 +103,94 @@ function TransactionCard({ txn }: { txn: any }) {
         {txn.waiver_bid != null && <span className="ml-2">Bid: ${txn.waiver_bid}</span>}
         {txn.status_updated && <span className="ml-2">{formatDate(txn.status_updated)}</span>}
       </div>
-      {txn.owners?.length > 0 && (
-        <div className="text-xs font-medium text-gray-700 mb-1 truncate">
-          {txn.owners.map((o: any) => o.team_name || o.username).join(', ')}
+
+      {isTrade ? (
+        <div className="space-y-1.5 mt-1">
+          {txn.owners?.map((owner: any) => {
+            const rid = owner.roster_id;
+            const teamName = owner.team_name || owner.username;
+            const received = txn.adds?.filter((a: any) => a.roster_id === rid) || [];
+            const gave = txn.drops?.filter((d: any) => d.roster_id === rid) || [];
+            const picksGot = txn.draft_picks?.filter(
+              (p: any) => p.owner_id === rid && p.previous_owner_id !== rid
+            ) || [];
+            const picksLost = txn.draft_picks?.filter(
+              (p: any) => p.previous_owner_id === rid && p.owner_id !== rid
+            ) || [];
+
+            if (!received.length && !gave.length && !picksGot.length && !picksLost.length) return null;
+
+            return (
+              <div key={rid} className="bg-gray-50 rounded p-1.5">
+                <div className="text-xs font-bold text-gray-800 mb-0.5 truncate">{teamName}</div>
+                {(received.length > 0 || picksGot.length > 0) && (
+                  <div className="mb-0.5">
+                    <span className="text-xs font-semibold text-green-600">Received:</span>
+                    {received.map((add: any) => (
+                      <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
+                        <PositionBadge position={add.position} />
+                        <span className="text-xs text-gray-800">{add.player_name}</span>
+                      </div>
+                    ))}
+                    {picksGot.map((pick: any, idx: number) => (
+                      <div key={`pg-${idx}`} className="text-xs text-gray-800 mt-0.5 ml-1">
+                        {pick.season} Rd {pick.round} pick
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(gave.length > 0 || picksLost.length > 0) && (
+                  <div>
+                    <span className="text-xs font-semibold text-red-600">Gave up:</span>
+                    {gave.map((drop: any) => (
+                      <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
+                        <PositionBadge position={drop.position} />
+                        <span className="text-xs text-gray-800">{drop.player_name}</span>
+                      </div>
+                    ))}
+                    {picksLost.map((pick: any, idx: number) => (
+                      <div key={`pl-${idx}`} className="text-xs text-gray-800 mt-0.5 ml-1">
+                        {pick.season} Rd {pick.round} pick
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
-      {txn.adds?.length > 0 && (
-        <div className="mb-1">
-          <span className="text-xs font-semibold text-green-600">Add:</span>
-          {txn.adds.map((add: any) => (
-            <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
-              <PositionBadge position={add.position} />
-              <span className="text-xs text-gray-800">{add.player_name}</span>
+      ) : (
+        <>
+          {txn.owners?.length > 0 && (
+            <div className="text-xs font-medium text-gray-700 mb-1 truncate">
+              {txn.owners.map((o: any) => o.team_name || o.username).join(', ')}
             </div>
-          ))}
-        </div>
-      )}
-      {txn.drops?.length > 0 && (
-        <div className="mb-1">
-          <span className="text-xs font-semibold text-red-600">Drop:</span>
-          {txn.drops.map((drop: any) => (
-            <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
-              <PositionBadge position={drop.position} />
-              <span className="text-xs text-gray-800">{drop.player_name}</span>
+          )}
+          {txn.adds?.length > 0 && (
+            <div className="mb-1">
+              <span className="text-xs font-semibold text-green-600">Add:</span>
+              {txn.adds.map((add: any) => (
+                <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
+                  <PositionBadge position={add.position} />
+                  <span className="text-xs text-gray-800">{add.player_name}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      {txn.draft_picks?.length > 0 && (
-        <div className="mb-1">
-          <span className="text-xs font-semibold text-blue-600">Picks:</span>
-          {txn.draft_picks.map((pick: any, idx: number) => (
-            <div key={idx} className="text-xs text-gray-800 mt-0.5 ml-1">
-              {pick.season} Rd {pick.round}
+          )}
+          {txn.drops?.length > 0 && (
+            <div className="mb-1">
+              <span className="text-xs font-semibold text-red-600">Drop:</span>
+              {txn.drops.map((drop: any) => (
+                <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
+                  <PositionBadge position={drop.position} />
+                  <span className="text-xs text-gray-800">{drop.player_name}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
+
       {txn.status === 'failed' && txn.metadata_notes && (
         <p className="text-xs text-red-500 italic mt-1">{txn.metadata_notes}</p>
       )}

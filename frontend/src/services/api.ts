@@ -59,6 +59,12 @@ export const api = {
   // Transactions
   getRecentTransactions: (limit: number = 20) =>
     apiClient.get('/transactions/recent', { params: { limit } }).then(res => res.data),
+  getTransactionSummary: (season?: number) =>
+    apiClient.get('/transactions/summary', { params: season ? { season } : {} }).then(res => res.data),
+  getTransactionsByOwner: (userId: string, type: string, season?: number) =>
+    apiClient.get('/transactions/by-owner', {
+      params: { user_id: userId, type, ...(season ? { season } : {}) },
+    }).then(res => res.data),
 
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
