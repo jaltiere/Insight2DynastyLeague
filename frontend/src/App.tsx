@@ -8,6 +8,7 @@ import Owners from './pages/Owners';
 import Drafts from './pages/Drafts';
 import LeagueHistory from './pages/LeagueHistory';
 import TaxiSquads from './pages/TaxiSquads';
+import Transactions from './pages/Transactions';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function App() {
             <Route path="head-to-head" element={<HeadToHead />} />
             <Route path="owners" element={<Owners />} />
             <Route path="drafts" element={<Drafts />} />
+            <Route path="transactions" element={<Transactions />} />
             <Route path="league-history" element={<LeagueHistory />} />
           </Route>
         </Routes>

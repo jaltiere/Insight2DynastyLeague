@@ -28,6 +28,9 @@ export default function Layout() {
               <Link to="/drafts" className="hover:text-blue-200 transition">
                 Drafts
               </Link>
+              <Link to="/transactions" className="hover:text-blue-200 transition">
+                Transactions
+              </Link>
               <Link to="/league-history" className="hover:text-blue-200 transition">
                 History
               </Link>
