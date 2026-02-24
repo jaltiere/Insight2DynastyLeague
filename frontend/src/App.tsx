@@ -8,6 +8,7 @@ import Owners from './pages/Owners';
 import Drafts from './pages/Drafts';
 import LeagueHistory from './pages/LeagueHistory';
 import TaxiSquads from './pages/TaxiSquads';
+import RookieRecords from './pages/RookieRecords';
 import Transactions from './pages/Transactions';
 
 const queryClient = new QueryClient({
@@ -29,6 +30,7 @@ function App() {
             <Route index element={<Home />} />
             <Route path="taxi-squads" element={<TaxiSquads />} />
             <Route path="players" element={<Players />} />
+            <Route path="rookie-records" element={<RookieRecords />} />
             <Route path="head-to-head" element={<HeadToHead />} />
             <Route path="owners" element={<Owners />} />
             <Route path="drafts" element={<Drafts />} />

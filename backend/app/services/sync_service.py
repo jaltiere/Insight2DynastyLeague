@@ -99,7 +99,8 @@ class SyncService:
                 await self.db.flush()
 
             # Sync players once (shared across all seasons)
-            await self._sync_players()
+            current_season_year = int(nfl_state.get("season", 2024))
+            await self._sync_players(current_season_year)
 
             await self.db.commit()
 
@@ -158,7 +159,7 @@ class SyncService:
             )
 
             # Sync players (this is a large dataset)
-            await self._sync_players()
+            await self._sync_players(int(current_season))
 
             await self.db.commit()
 
@@ -598,7 +599,7 @@ class SyncService:
                 )
                 self.db.add(pick)
 
-    async def _sync_players(self):
+    async def _sync_players(self, current_season_year: int):
         """Sync all NFL players (large dataset)."""
         logger.info("Starting player sync (this may take a while)...")
 
@@ -615,6 +616,10 @@ class SyncService:
 
                 full_name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
 
+                # Compute rookie_year from years_exp
+                years_exp = self._safe_int(player_data.get("years_exp"))
+                rookie_year = (current_season_year - years_exp) if years_exp is not None else None
+
                 if player:
                     player.first_name = player_data.get("first_name")
                     player.last_name = player_data.get("last_name")
@@ -625,6 +630,8 @@ class SyncService:
                     player.age = player_data.get("age")
                     player.status = player_data.get("status")
                     player.injury_status = player_data.get("injury_status")
+                    player.years_exp = years_exp
+                    player.rookie_year = rookie_year
                 else:
                     player = Player(
                         id=player_id,
@@ -638,7 +645,8 @@ class SyncService:
                         height=player_data.get("height"),
                         weight=self._safe_int(player_data.get("weight")),
                         college=player_data.get("college"),
-                        years_exp=self._safe_int(player_data.get("years_exp")),
+                        years_exp=years_exp,
+                        rookie_year=rookie_year,
                         status=player_data.get("status"),
                         injury_status=player_data.get("injury_status")
                     )
