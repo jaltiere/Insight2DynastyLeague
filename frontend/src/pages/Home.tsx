@@ -278,7 +278,7 @@ export default function Home() {
         )}
       </div>
 
-      <div className={`grid gap-6 mb-8 ${numDivisions <= 2 ? 'md:grid-cols-2' : 'md:grid-cols-2 lg:grid-cols-4'}`}>
+      <div className="grid gap-6 mb-8 md:grid-cols-2">
         {divisions.map((div) => (
           <DivisionTable
             key={div.num}
