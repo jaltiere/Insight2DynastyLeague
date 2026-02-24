@@ -50,6 +50,15 @@ export const api = {
     limit?: number;
   }) => apiClient.get('/player-records', { params }).then(res => res.data),
 
+  // Rookie Records
+  getRookieRecords: (params?: {
+    view?: string;
+    match_type?: string;
+    roster_type?: string;
+    position?: string;
+    limit?: number;
+  }) => apiClient.get('/rookie-records', { params }).then(res => res.data),
+
   // Taxi Squads
   getTaxiSquads: () => apiClient.get('/taxi-squads').then(res => res.data),
 

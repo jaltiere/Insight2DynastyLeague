@@ -19,6 +19,9 @@ export default function Layout() {
               <Link to="/players" className="hover:text-blue-200 transition">
                 Player Records
               </Link>
+              <Link to="/rookie-records" className="hover:text-blue-200 transition">
+                Rookie Records
+              </Link>
               <Link to="/head-to-head" className="hover:text-blue-200 transition">
                 H2H
               </Link>

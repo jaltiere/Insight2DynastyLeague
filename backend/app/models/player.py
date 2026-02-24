@@ -22,6 +22,7 @@ class Player(Base):
     weight = Column(Integer)
     college = Column(String(100))
     years_exp = Column(Integer)
+    rookie_year = Column(Integer)  # Computed: current_season - years_exp
 
     # Status
     status = Column(String(50))  # Active, Inactive, Injured Reserve, etc.
