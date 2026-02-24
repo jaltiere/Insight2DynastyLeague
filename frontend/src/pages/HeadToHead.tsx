@@ -36,8 +36,8 @@ function RecordCell({ record }: { record: H2HRecord | undefined }) {
 
   const { wins, losses, ties } = record;
   let bg = '';
-  if (wins > losses) bg = 'bg-green-50 text-green-800';
-  else if (losses > wins) bg = 'bg-red-50 text-red-800';
+  if (wins > losses) bg = 'bg-green-50 text-green-800 dark:bg-green-900/30 dark:text-green-400';
+  else if (losses > wins) bg = 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400';
 
   return (
     <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${bg}`}>

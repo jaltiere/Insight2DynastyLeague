@@ -277,9 +277,9 @@ export default function Transactions() {
   if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <h2 className="text-red-800 text-lg font-semibold">Error loading transactions</h2>
-          <p className="text-red-600 mt-2">Please try refreshing the page.</p>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 dark:bg-red-900/20 dark:border-red-800">
+          <h2 className="text-red-800 text-lg font-semibold dark:text-red-400">Error loading transactions</h2>
+          <p className="text-red-600 mt-2 dark:text-red-400">Please try refreshing the page.</p>
         </div>
       </div>
     );
