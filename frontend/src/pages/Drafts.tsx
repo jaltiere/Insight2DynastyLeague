@@ -49,14 +49,14 @@ interface DraftDetail {
 function getPositionColor(position?: string): string {
   switch (position) {
     case 'QB':
-      return 'bg-pink-200 border-pink-300';
+      return 'bg-pink-200 border-pink-300 dark:bg-pink-900/40 dark:border-pink-700 dark:text-pink-100';
     case 'RB':
-      return 'bg-sky-200 border-sky-300';
+      return 'bg-sky-200 border-sky-300 dark:bg-sky-900/40 dark:border-sky-700 dark:text-sky-100';
     case 'WR':
     case 'DB':
-      return 'bg-orange-200 border-orange-300';
+      return 'bg-orange-200 border-orange-300 dark:bg-orange-900/40 dark:border-orange-700 dark:text-orange-100';
     case 'TE':
-      return 'bg-yellow-200 border-yellow-300';
+      return 'bg-yellow-200 border-yellow-300 dark:bg-yellow-900/40 dark:border-yellow-700 dark:text-yellow-100';
     case 'DEF':
       return 'bg-amber-800 border-amber-900 text-white';
     default:
@@ -265,7 +265,7 @@ export default function Drafts() {
                             </div>
                             {pick.owner_display_name && (
                               <div className={`mt-0.5 inline-flex items-center gap-0.5 rounded-sm px-1 py-px ${
-                                isTraded ? 'bg-black/20' : ''
+                                isTraded ? 'bg-black/20 dark:bg-yellow-400/80 dark:text-black' : ''
                               }`}>
                                 {isTraded && <span className="text-[8px] font-bold">&rarr;</span>}
                                 <span className="text-[8px] font-semibold truncate">{pick.owner_display_name}</span>
