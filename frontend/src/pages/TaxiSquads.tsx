@@ -89,11 +89,11 @@ export default function TaxiSquads() {
           return (
             <div key={team.owner_name} className="bg-white rounded-lg shadow overflow-hidden">
               {/* Team header */}
-              <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-3">
+              <div className="bg-blue-600 dark:bg-blue-800 text-white px-4 py-3 flex items-center gap-3">
                 {avatar ? (
                   <img src={avatar} alt={team.owner_name} className="w-8 h-8 rounded-full" />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-blue-400 flex items-center justify-center text-sm font-bold">
+                  <div className="w-8 h-8 rounded-full bg-blue-400 dark:bg-blue-600 flex items-center justify-center text-sm font-bold">
                     {team.owner_name.charAt(0).toUpperCase()}
                   </div>
                 )}

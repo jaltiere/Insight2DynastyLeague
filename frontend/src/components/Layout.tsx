@@ -6,43 +6,43 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-blue-600 text-white shadow-lg">
+      <nav className="bg-blue-600 dark:bg-blue-800 text-white shadow-lg">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link to="/" className="text-2xl font-bold">
               Insight2Dynasty
             </Link>
             <div className="flex items-center space-x-6">
-              <Link to="/" className="hover:text-blue-200 transition">
+              <Link to="/" className="font-semibold hover:text-blue-200 transition">
                 Standings
               </Link>
-              <Link to="/taxi-squads" className="hover:text-blue-200 transition">
+              <Link to="/taxi-squads" className="font-semibold hover:text-blue-200 transition">
                 Taxi Squads
               </Link>
-              <Link to="/players" className="hover:text-blue-200 transition">
+              <Link to="/players" className="font-semibold hover:text-blue-200 transition">
                 Player Records
               </Link>
-              <Link to="/rookie-records" className="hover:text-blue-200 transition">
+              <Link to="/rookie-records" className="font-semibold hover:text-blue-200 transition">
                 Rookie Records
               </Link>
-              <Link to="/head-to-head" className="hover:text-blue-200 transition">
+              <Link to="/head-to-head" className="font-semibold hover:text-blue-200 transition">
                 H2H
               </Link>
-              <Link to="/owners" className="hover:text-blue-200 transition">
+              <Link to="/owners" className="font-semibold hover:text-blue-200 transition">
                 Owners
               </Link>
-              <Link to="/drafts" className="hover:text-blue-200 transition">
+              <Link to="/drafts" className="font-semibold hover:text-blue-200 transition">
                 Drafts
               </Link>
-              <Link to="/transactions" className="hover:text-blue-200 transition">
+              <Link to="/transactions" className="font-semibold hover:text-blue-200 transition">
                 Transactions
               </Link>
-              <Link to="/league-history" className="hover:text-blue-200 transition">
+              <Link to="/league-history" className="font-semibold hover:text-blue-200 transition">
                 History
               </Link>
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-blue-500 transition"
+                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
                 {theme === 'dark' ? (
