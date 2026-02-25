@@ -146,10 +146,11 @@ class SyncService:
             # Flush to ensure rosters are visible for awards sync
             await self.db.flush()
 
-            # Sync season awards from bracket data
-            await self._sync_season_awards(
-                league_data.get("league_id"), int(current_season)
-            )
+            # Sync season awards from bracket data (completed seasons only)
+            if league_data.get("status") == "complete":
+                await self._sync_season_awards(
+                    league_data.get("league_id"), int(current_season)
+                )
 
             # Sync transactions
             await self._sync_transactions(
@@ -736,6 +737,22 @@ class SyncService:
                     final_record=f"{winner.wins or 0}-{winner.losses or 0}-{winner.ties or 0}",
                     points_for=winner.points_for,
                 ))
+
+        # --- Most points in regular season ---
+        if rosters:
+            rosters_with_points = [r for r in rosters if r.points_for]
+            if rosters_with_points:
+                rosters_with_points.sort(key=lambda r: r.points_for, reverse=True)
+                top_scorer = rosters_with_points[0]
+                if top_scorer.user_id:
+                    self.db.add(SeasonAward(
+                        season_id=season.id,
+                        user_id=top_scorer.user_id,
+                        award_type="most_points",
+                        roster_id=top_scorer.roster_id,
+                        final_record=f"{top_scorer.wins or 0}-{top_scorer.losses or 0}-{top_scorer.ties or 0}",
+                        points_for=top_scorer.points_for,
+                    ))
 
         logger.info(f"Synced season awards for {year}")
 
