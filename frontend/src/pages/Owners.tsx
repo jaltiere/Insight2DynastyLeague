@@ -47,7 +47,7 @@ const categories: { key: RecordCategory; label: string }[] = [
 
 function SortArrow({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDirection }) {
   if (field !== sortField) return null;
-  return <span className="text-blue-600 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
+  return <span className="text-blue-600 dark:text-blue-400 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
 }
 
 export default function Owners() {
@@ -164,7 +164,7 @@ export default function Owners() {
 
       {/* Career Stats Table */}
       <div className="bg-white rounded-lg shadow mb-6">
-        <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg">
+        <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
           <h2 className="text-xl font-semibold">Career Statistics</h2>
         </div>
 
@@ -176,7 +176,7 @@ export default function Owners() {
               onClick={() => setActiveCategory(cat.key)}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeCategory === cat.key
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -253,7 +253,7 @@ export default function Owners() {
       {/* Season Breakdown (shown when owner selected) */}
       {selectedOwnerId && (
         <div className="bg-white rounded-lg shadow">
-          <div className="bg-green-600 text-white px-6 py-3 rounded-t-lg">
+          <div className="bg-green-600 dark:bg-green-800 text-white px-6 py-3 rounded-t-lg">
             <h2 className="text-xl font-semibold">
               {ownerDetails
                 ? `${ownerDetails.display_name || ownerDetails.username} - Season Breakdown`

@@ -157,7 +157,7 @@ export default function Drafts() {
             onClick={() => setSelectedYear(d.year)}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               activeYear === d.year
-                ? 'bg-blue-600 text-white'
+                ? 'bg-blue-600 dark:bg-blue-800 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-100 shadow'
             }`}
           >
@@ -181,7 +181,7 @@ export default function Drafts() {
 
       {draftDetail && !detailLoading && (
         <div className="bg-white rounded-lg shadow">
-          <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg flex items-center justify-between">
+          <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg flex items-center justify-between">
             <h2 className="text-xl font-semibold">{draftDetail.year} Draft</h2>
             <span className="text-sm opacity-80 capitalize">{draftDetail.type} - {draftDetail.rounds} rounds</span>
           </div>

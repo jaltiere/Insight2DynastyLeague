@@ -12,7 +12,7 @@ const POSITION_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  complete: 'text-green-500',
+  complete: 'text-green-500 dark:text-green-400',
   failed: 'text-red-500',
 };
 
@@ -46,7 +46,7 @@ interface SummaryEntry {
 
 function SortArrow({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
   if (field !== sortField) return null;
-  return <span className="text-blue-600 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
+  return <span className="text-blue-600 dark:text-blue-400 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
 }
 
 interface ModalProps {
@@ -79,14 +79,14 @@ function TransactionModal({ teamName, typeName, userId, type, onClose }: ModalPr
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
-        <div className="bg-blue-600 text-white px-6 py-4 rounded-t-lg flex items-center justify-between">
+        <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-4 rounded-t-lg flex items-center justify-between">
           <h2 className="text-lg font-semibold">{teamName} &mdash; {typeName}</h2>
           <button onClick={onClose} className="text-white hover:text-blue-200 text-2xl leading-none">&times;</button>
         </div>
         <div className="overflow-y-auto p-4 flex-1">
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400"></div>
             </div>
           ) : transactions.length === 0 ? (
             <p className="text-gray-500 text-center py-8">No transactions found.</p>
@@ -140,7 +140,7 @@ function TransactionModal({ teamName, typeName, userId, type, onClose }: ModalPr
                               <div className="text-xs font-bold text-gray-800 mb-1">{teamName}</div>
                               {(received.length > 0 || picksGot.length > 0) && (
                                 <div className="mb-1">
-                                  <span className="text-xs font-semibold text-green-600">Received:</span>
+                                  <span className="text-xs font-semibold text-green-600 dark:text-green-400">Received:</span>
                                   {received.map((add: any) => (
                                     <div key={add.player_id} className="flex items-center mt-0.5 ml-2">
                                       <PositionBadge position={add.position} />
@@ -184,7 +184,7 @@ function TransactionModal({ teamName, typeName, userId, type, onClose }: ModalPr
                         )}
                         {txn.adds?.length > 0 && (
                           <div className="mb-1">
-                            <span className="text-xs font-semibold text-green-600">Add:</span>
+                            <span className="text-xs font-semibold text-green-600 dark:text-green-400">Add:</span>
                             {txn.adds.map((add: any) => (
                               <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                                 <PositionBadge position={add.position} />
@@ -268,7 +268,7 @@ export default function Transactions() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
         </div>
       </div>
     );
@@ -293,7 +293,7 @@ export default function Transactions() {
 
       {/* Summary table */}
       <div className="bg-white rounded-lg shadow">
-        <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg">
+        <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
           <h2 className="text-xl font-semibold">
             Transaction Summary
           </h2>
@@ -338,7 +338,7 @@ export default function Transactions() {
                       {entry.waiver_adds > 0 ? (
                         <button
                           onClick={() => openModal(entry, 'waiver', 'Waiver Adds')}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline font-medium"
                         >
                           {entry.waiver_adds}
                         </button>
@@ -350,7 +350,7 @@ export default function Transactions() {
                       {entry.free_agent_adds > 0 ? (
                         <button
                           onClick={() => openModal(entry, 'free_agent', 'Free Agent Adds')}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline font-medium"
                         >
                           {entry.free_agent_adds}
                         </button>
@@ -362,7 +362,7 @@ export default function Transactions() {
                       {entry.trades > 0 ? (
                         <button
                           onClick={() => openModal(entry, 'trade', 'Trades')}
-                          className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline font-medium"
                         >
                           {entry.trades}
                         </button>

@@ -99,7 +99,7 @@ export default function HeadToHead() {
 
       {/* H2H Matrix Card */}
       <div className="bg-white rounded-lg shadow mb-6">
-        <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg">
+        <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
           <h2 className="text-xl font-semibold">Head-to-Head Records</h2>
         </div>
 
@@ -111,7 +111,7 @@ export default function HeadToHead() {
               onClick={() => setActiveCategory(cat.key)}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeCategory === cat.key
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -174,7 +174,7 @@ export default function HeadToHead() {
       {/* Median Record Card - Regular Season only */}
       {activeCategory === 'regular_season' && (
         <div className="bg-white rounded-lg shadow">
-          <div className="bg-green-600 text-white px-6 py-3 rounded-t-lg">
+          <div className="bg-green-600 dark:bg-green-800 text-white px-6 py-3 rounded-t-lg">
             <h2 className="text-xl font-semibold">Record vs. League Median</h2>
           </div>
           <div className="overflow-x-auto">
