@@ -4,7 +4,7 @@ from sqlalchemy import select, desc, or_
 from statistics import median as calc_median
 from collections import defaultdict
 from app.database import get_db
-from app.models import User, Roster, Season, Matchup, League
+from app.models import User, Roster, Season, Matchup, League, SeasonAward
 from typing import Dict, Any, List
 
 router = APIRouter()
@@ -19,11 +19,13 @@ async def get_all_owners(db: AsyncSession = Depends(get_db)):
     owner_stats = []
     for user in users:
         stats = await _calculate_owner_stats(db, user.id)
+        trophies = await _count_trophies(db, user.id)
         owner_stats.append({
             "user_id": user.id,
             "username": user.username,
             "display_name": user.display_name,
             "avatar": user.avatar,
+            "trophies": trophies,
             **stats
         })
 
@@ -98,8 +100,9 @@ async def get_owner_details(user_id: str, db: AsyncSession = Depends(get_db)):
             "win_percentage": reg["win_percentage"],
         })
 
-    # Calculate career stats
+    # Calculate career stats and trophies
     stats = await _calculate_owner_stats(db, user_id)
+    trophies = await _count_trophies(db, user_id)
 
     return {
         "user_id": user.id,
@@ -107,6 +110,7 @@ async def get_owner_details(user_id: str, db: AsyncSession = Depends(get_db)):
         "display_name": user.display_name,
         "avatar": user.avatar,
         "career_stats": stats,
+        "trophies": trophies,
         "seasons": seasons
     }
 
@@ -156,6 +160,20 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
         cat["points_against"] = round(cat["points_against"], 2)
 
     return categories
+
+
+async def _count_trophies(db: AsyncSession, user_id: str) -> Dict[str, int]:
+    """Count trophy awards for an owner: champion, division_winner, most_points."""
+    result = await db.execute(
+        select(SeasonAward).where(SeasonAward.user_id == user_id)
+    )
+    awards = result.scalars().all()
+
+    counts = {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0}
+    for award in awards:
+        if award.award_type in counts:
+            counts[award.award_type] += 1
+    return counts
 
 
 async def _calculate_owner_stats(db: AsyncSession, user_id: str) -> Dict[str, Any]:
