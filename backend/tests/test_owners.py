@@ -1,5 +1,6 @@
 from tests.conftest import (
     create_league, create_season, create_user, create_roster, create_matchup,
+    create_season_award,
 )
 
 
@@ -284,3 +285,59 @@ async def test_owner_details_median_record_no_matchups(client, db_session):
     assert season_data["median_wins"] == 0
     assert season_data["median_losses"] == 0
     assert season_data["median_ties"] == 0
+
+
+async def test_owners_list_includes_trophies(client, db_session):
+    """Test that /api/owners response includes trophy counts."""
+    league = await create_league(db_session)
+    s1 = await create_season(db_session, league, year=2022)
+    s2 = await create_season(db_session, league, year=2023)
+    user = await create_user(db_session, id="u1", display_name="Owner One")
+    await create_roster(db_session, s1, user, roster_id=1)
+    await create_roster(db_session, s2, user, roster_id=2)
+
+    await create_season_award(db_session, s1, user, award_type="champion")
+    await create_season_award(db_session, s1, user, award_type="division_winner",
+                              award_detail="Division 1")
+    await create_season_award(db_session, s2, user, award_type="champion")
+    await create_season_award(db_session, s2, user, award_type="most_points")
+
+    response = await client.get("/api/owners")
+    assert response.status_code == 200
+    owner = response.json()["owners"][0]
+    assert owner["trophies"]["champion"] == 2
+    assert owner["trophies"]["division_winner"] == 1
+    assert owner["trophies"]["most_points"] == 1
+
+
+async def test_owner_details_includes_trophies(client, db_session):
+    """Test that /api/owners/{id} response includes trophy counts."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1)
+
+    await create_season_award(db_session, season, user, award_type="champion")
+    await create_season_award(db_session, season, user, award_type="division_winner",
+                              award_detail="Division 1")
+
+    response = await client.get("/api/owners/u1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["trophies"]["champion"] == 1
+    assert data["trophies"]["division_winner"] == 1
+    assert data["trophies"]["most_points"] == 0
+    assert data["trophies"]["consolation"] == 0
+
+
+async def test_owner_trophies_zero_when_no_awards(client, db_session):
+    """Test that trophies are all zero when owner has no awards."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1)
+
+    response = await client.get("/api/owners")
+    assert response.status_code == 200
+    owner = response.json()["owners"][0]
+    assert owner["trophies"] == {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0}

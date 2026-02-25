@@ -15,12 +15,20 @@ interface CategoryRecord {
   win_percentage: number;
 }
 
+interface Trophies {
+  champion: number;
+  division_winner: number;
+  most_points: number;
+  consolation: number;
+}
+
 interface Owner {
   user_id: string;
   username: string;
   display_name: string;
   avatar: string;
   seasons_played: number;
+  trophies: Trophies;
   regular_season: CategoryRecord;
   playoff: CategoryRecord;
   consolation: CategoryRecord;
@@ -45,9 +53,35 @@ const categories: { key: RecordCategory; label: string }[] = [
   { key: 'consolation', label: 'Consolation' },
 ];
 
+const TROPHY_ICONS = {
+  champion: { icon: '\uD83C\uDFC6', label: 'League Champion' },
+  division_winner: { icon: '\uD83C\uDFC5', label: 'Division Winner' },
+  most_points: { icon: '\uD83C\uDF96\uFE0F', label: 'Most Points (Regular Season)' },
+  consolation: { icon: '\uD83E\uDD49', label: 'Consolation Winner' },
+};
+
+const EMPTY_TROPHIES: Trophies = { champion: 0, division_winner: 0, most_points: 0, consolation: 0 };
+
+function TrophyDisplay({ trophies }: { trophies: Trophies }) {
+  const t = trophies || EMPTY_TROPHIES;
+  const items = (Object.keys(TROPHY_ICONS) as (keyof Trophies)[]).filter(
+    key => t[key] > 0
+  );
+  if (items.length === 0) return <span className="text-gray-400">-</span>;
+  return (
+    <span className="inline-flex items-center gap-2">
+      {items.map(key => (
+        <span key={key} title={TROPHY_ICONS[key].label}>
+          {TROPHY_ICONS[key].icon} x{t[key]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function SortArrow({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDirection }) {
   if (field !== sortField) return null;
-  return <span className="text-blue-600 dark:text-blue-400 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
+  return <span className="text-blue-600 ml-1">{sortDir === 'asc' ? '\u25B2' : '\u25BC'}</span>;
 }
 
 export default function Owners() {
@@ -164,7 +198,7 @@ export default function Owners() {
 
       {/* Career Stats Table */}
       <div className="bg-white rounded-lg shadow mb-6">
-        <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
+        <div className="bg-blue-600 text-white px-6 py-3 rounded-t-lg">
           <h2 className="text-xl font-semibold">Career Statistics</h2>
         </div>
 
@@ -176,7 +210,7 @@ export default function Owners() {
               onClick={() => setActiveCategory(cat.key)}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeCategory === cat.key
-                  ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                  ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -213,6 +247,9 @@ export default function Owners() {
                 <th className={`${thClass} text-right`} onClick={() => handleSort('pa')}>
                   PA<SortArrow field="pa" sortField={sortField} sortDir={sortDir} />
                 </th>
+                <th className={`${thClass} text-center`}>
+                  Trophies
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -222,7 +259,7 @@ export default function Owners() {
                   <tr
                     key={owner.user_id}
                     className={`cursor-pointer transition-colors ${
-                      selectedOwnerId === owner.user_id ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50'
+                      selectedOwnerId === owner.user_id ? 'bg-blue-50' : 'hover:bg-gray-50'
                     }`}
                     onClick={() =>
                       setSelectedOwnerId(
@@ -242,18 +279,33 @@ export default function Owners() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_for.toFixed(2)}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_against.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-center whitespace-nowrap">
+                      <TrophyDisplay trophies={owner.trophies} />
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+
+        {/* Trophy Key */}
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+          <div className="flex items-center gap-6 text-xs text-gray-600">
+            <span className="font-medium uppercase text-gray-500">Key:</span>
+            {Object.entries(TROPHY_ICONS).map(([key, { icon, label }]) => (
+              <span key={key} className="inline-flex items-center gap-1">
+                {icon} {label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Season Breakdown (shown when owner selected) */}
       {selectedOwnerId && (
         <div className="bg-white rounded-lg shadow">
-          <div className="bg-green-600 dark:bg-green-800 text-white px-6 py-3 rounded-t-lg">
+          <div className="bg-green-600 text-white px-6 py-3 rounded-t-lg">
             <h2 className="text-xl font-semibold">
               {ownerDetails
                 ? `${ownerDetails.display_name || ownerDetails.username} - Season Breakdown`
