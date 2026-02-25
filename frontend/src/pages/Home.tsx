@@ -12,7 +12,7 @@ const POSITION_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  complete: 'text-green-500',
+  complete: 'text-green-500 dark:text-green-400',
   failed: 'text-red-500',
 };
 
@@ -125,7 +125,7 @@ function TransactionCard({ txn }: { txn: any }) {
                 <div className="text-xs font-bold text-gray-800 mb-0.5 truncate">{teamName}</div>
                 {(received.length > 0 || picksGot.length > 0) && (
                   <div className="mb-0.5">
-                    <span className="text-xs font-semibold text-green-600">Received:</span>
+                    <span className="text-xs font-semibold text-green-600 dark:text-green-400">Received:</span>
                     {received.map((add: any) => (
                       <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                         <PositionBadge position={add.position} />
@@ -168,7 +168,7 @@ function TransactionCard({ txn }: { txn: any }) {
           )}
           {txn.adds?.length > 0 && (
             <div className="mb-1">
-              <span className="text-xs font-semibold text-green-600">Add:</span>
+              <span className="text-xs font-semibold text-green-600 dark:text-green-400">Add:</span>
               {txn.adds.map((add: any) => (
                 <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                   <PositionBadge position={add.position} />
@@ -199,8 +199,8 @@ function TransactionCard({ txn }: { txn: any }) {
 }
 
 const DIVISION_COLORS = [
-  'bg-blue-600',
-  'bg-green-600',
+  'bg-blue-600 dark:bg-blue-800',
+  'bg-green-600 dark:bg-green-800',
   'bg-purple-600',
   'bg-orange-600',
 ];
