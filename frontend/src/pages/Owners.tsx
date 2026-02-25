@@ -328,7 +328,9 @@ export default function Owners() {
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">L</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">T</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Win%</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">vs Median</th>
+                    {activeCategory === 'regular_season' && (
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">vs Median</th>
+                    )}
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PF</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PA</th>
                   </tr>
@@ -347,9 +349,11 @@ export default function Owners() {
                         <td className="px-4 py-3 text-sm text-gray-900 text-center">
                           {(rec.win_percentage * 100).toFixed(1)}%
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900 text-center">
-                          {season.median_wins}-{season.median_losses}-{season.median_ties}
-                        </td>
+                        {activeCategory === 'regular_season' && (
+                          <td className="px-4 py-3 text-sm text-gray-900 text-center">
+                            {season.median_wins}-{season.median_losses}-{season.median_ties}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_for.toFixed(2)}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_against.toFixed(2)}</td>
                       </tr>
