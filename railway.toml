@@ -5,9 +5,8 @@
 builder = "nixpacks"
 
 [deploy]
-# TEMPORARY: Running migrations in start command for initial deployment
-# TODO: Remove after first successful migration
-startCommand = "cd backend && alembic upgrade head && cd .. && uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
+# Let nixpacks handle migrations via the migrate phase
+# Start command is defined in nixpacks.toml
 
 # Environment variables (set in Railway dashboard)
 # Required:
