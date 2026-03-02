@@ -1,0 +1,41 @@
+name: Scheduled Data Sync
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC (adjust to your timezone preference)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  sync-data:
+    name: Sync Sleeper Data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger data sync
+        run: |
+          echo "🔄 Starting scheduled data sync from Sleeper API..."
+
+          response=$(curl -X POST ${{ secrets.RAILWAY_API_URL }}/api/cron/sync \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s)
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Response: $body"
+
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Data sync completed successfully"
+          else
+            echo "❌ Data sync failed with status code: $http_code"
+            exit 1
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "⚠️ Scheduled sync failed. Check logs and Railway service status."
+          # You can add Slack/Discord webhook notification here if desired
