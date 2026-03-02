@@ -184,6 +184,20 @@ git checkout main
 git pull origin main
 ```
 
+### Creating Pull Requests
+
+**GitHub CLI Location**: The `gh` CLI is installed but not in system PATH. Use the full path:
+```bash
+"/c/Program Files/GitHub CLI/gh.exe" pr create --title "Your Title" --body "Your description"
+```
+
+**Example PR Creation**:
+```bash
+"/c/Program Files/GitHub CLI/gh.exe" pr create \
+  --title "Add new feature" \
+  --body "Description of changes"
+```
+
 ## Coding Guidelines
 
 ### Python (Backend)
