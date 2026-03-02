@@ -10,6 +10,7 @@ import LeagueHistory from './pages/LeagueHistory';
 import TaxiSquads from './pages/TaxiSquads';
 import RookieRecords from './pages/RookieRecords';
 import Transactions from './pages/Transactions';
+import TradeGrades from './pages/TradeGrades';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ function App() {
             <Route path="owners" element={<Owners />} />
             <Route path="drafts" element={<Drafts />} />
             <Route path="transactions" element={<Transactions />} />
+            <Route path="trade-grades" element={<TradeGrades />} />
             <Route path="league-history" element={<LeagueHistory />} />
           </Route>
         </Routes>
