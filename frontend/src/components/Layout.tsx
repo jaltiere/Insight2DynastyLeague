@@ -40,6 +40,9 @@ export default function Layout() {
               <Link to="/trade-grades" className="font-semibold hover:text-blue-200 transition">
                 Trade Grades
               </Link>
+              <Link to="/draft-rankings" className="font-semibold hover:text-blue-200 transition">
+                Draft Rankings
+              </Link>
               <Link to="/league-history" className="font-semibold hover:text-blue-200 transition">
                 History
               </Link>
