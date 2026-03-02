@@ -1,15 +1,11 @@
 # Railway configuration for Insight2Dynasty League
+# Docs: https://docs.railway.app/deploy/config-as-code
 
 [build]
 builder = "nixpacks"
-buildCommand = "pip install -r backend/requirements.txt"
 
 [deploy]
 startCommand = "cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 3
-
-# Health check endpoint
 healthcheckPath = "/api/health"
 healthcheckTimeout = 100
 
