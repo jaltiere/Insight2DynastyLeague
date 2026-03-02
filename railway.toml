@@ -1,0 +1,25 @@
+# Railway configuration for Insight2Dynasty League
+
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r backend/requirements.txt"
+
+[deploy]
+startCommand = "cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
+
+# Health check endpoint
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+
+# Environment variables (set in Railway dashboard)
+# Required:
+# - DATABASE_URL (auto-populated by Railway MySQL plugin)
+# - SLEEPER_LEAGUE_ID
+# - CORS_ORIGINS (comma-separated list including your Railway frontend URL)
+# - CRON_SECRET (for scheduled sync endpoint security)
+
+# Recommended:
+# - DEBUG=False
+# - APP_VERSION=1.0.0

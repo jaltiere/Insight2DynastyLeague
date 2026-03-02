@@ -1,0 +1,103 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v --tb=short
+
+      - name: Check code formatting
+        run: |
+          cd backend
+          pip install black
+          black --check app/ || echo "Warning: Code formatting issues found"
+
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Lint frontend
+        run: |
+          cd frontend
+          npm run lint || echo "Warning: Linting issues found"
+
+  deploy:
+    name: Deploy to Railway
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "✅ Tests passed! Railway will auto-deploy on push to main."
+          echo "Backend and frontend will be deployed automatically."
+
+      - name: Trigger initial data sync (optional)
+        if: false # Set to true to enable auto-sync after deployment
+        run: |
+          sleep 60 # Wait for deployment to complete
+          curl -X POST ${{ secrets.RAILWAY_API_URL }}/api/cron/sync \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -f || echo "Sync endpoint not ready yet"
+
+  report:
+    name: Deployment Report
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Report status
+        run: |
+          echo "🚀 Deployment workflow completed"
+          echo "Check Railway dashboard for deployment status"
+          echo "Remember to run database migrations if schema changed"

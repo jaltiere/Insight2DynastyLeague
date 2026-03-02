@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # API Rate Limiting
     SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
 
+    # Security
+    CRON_SECRET: str = "change-me-in-production"  # For securing scheduled sync endpoints
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):

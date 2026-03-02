@@ -51,3 +51,13 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/api/health")
+async def api_health_check():
+    """API health check endpoint for Railway and monitoring."""
+    return {
+        "status": "healthy",
+        "service": "Insight2Dynasty API",
+        "version": settings.APP_VERSION
+    }
