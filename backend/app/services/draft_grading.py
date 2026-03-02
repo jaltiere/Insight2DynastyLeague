@@ -168,19 +168,17 @@ class DraftGradingService:
     ) -> List[Draft]:
         """Fetch all completed drafts, optionally filtered by type.
 
-        Startup draft = 25-round linear draft (the initial league draft)
-        Rookie drafts = all subsequent annual rookie drafts
+        Startup draft = 25-round draft (the initial league draft)
+        Rookie drafts = all subsequent drafts (typically 3-5 rounds)
         """
         query = select(Draft).where(Draft.status == "complete")
 
-        # Filter by draft type:
-        # "startup" = 25-round linear draft
-        # "rookie" = all other drafts (typically 3-5 rounds)
+        # Filter by draft type based on number of rounds:
+        # "startup" = 20+ rounds (startup drafts are much larger)
+        # "rookie" = <20 rounds (rookie drafts are shorter)
         if draft_type == "startup":
-            # Startup draft has 25 rounds and type "linear"
-            query = query.where(Draft.rounds >= 20, Draft.type == "linear")
+            query = query.where(Draft.rounds >= 20)
         elif draft_type == "rookie":
-            # Rookie drafts have fewer rounds (typically 3-5)
             query = query.where(Draft.rounds < 20)
 
         query = query.order_by(Draft.year.desc())

@@ -35,6 +35,14 @@ const GRADE_ORDER: Record<string, number> = {
   F: 12,
 };
 
+const GRADE_TO_POINTS: Record<string, number> = {
+  'A+': 4.3, A: 4.0, 'A-': 3.7,
+  'B+': 3.3, B: 3.0, 'B-': 2.7,
+  'C+': 2.3, C: 2.0, 'C-': 1.7,
+  'D+': 1.3, D: 1.0, 'D-': 0.7,
+  F: 0.0,
+};
+
 interface PickDetail {
   pick_no: number;
   round: number;
@@ -77,6 +85,17 @@ interface Owner {
   display_name: string;
 }
 
+interface AggregateOwnerStats {
+  user_id: string;
+  username: string;
+  total_drafts: number;
+  avg_grade_points: number;
+  avg_grade: string;
+  total_value: number;
+  avg_value: number;
+  grades: string[];
+}
+
 function PositionBadge({ position }: { position: string | null }) {
   if (!position) return null;
   const bg = POSITION_COLORS[position] || 'bg-gray-400';
@@ -102,6 +121,123 @@ function SmallGradeBadge({ grade }: { grade: string }) {
     <span className={`${colors} text-sm font-bold px-2 py-0.5 rounded inline-block min-w-[2.5rem] text-center`}>
       {grade}
     </span>
+  );
+}
+
+// Cross-draft aggregate ranking table
+function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
+  // Aggregate stats by owner across all drafts
+  const ownerStatsMap = new Map<string, AggregateOwnerStats>();
+
+  drafts.forEach((draft) => {
+    draft.owners.forEach((owner) => {
+      const existing = ownerStatsMap.get(owner.user_id);
+      const gradePoints = GRADE_TO_POINTS[owner.grade] || 0;
+
+      if (existing) {
+        existing.total_drafts += 1;
+        existing.total_value += owner.total_value;
+        existing.avg_grade_points = (existing.avg_grade_points * (existing.total_drafts - 1) + gradePoints) / existing.total_drafts;
+        existing.grades.push(owner.grade);
+      } else {
+        ownerStatsMap.set(owner.user_id, {
+          user_id: owner.user_id,
+          username: owner.username,
+          total_drafts: 1,
+          avg_grade_points: gradePoints,
+          avg_grade: owner.grade,
+          total_value: owner.total_value,
+          avg_value: owner.total_value,
+          grades: [owner.grade],
+        });
+      }
+    });
+  });
+
+  // Calculate averages and determine letter grade
+  const ownerStats = Array.from(ownerStatsMap.values()).map((stats) => {
+    stats.avg_value = stats.total_value / stats.total_drafts;
+    // Map avg grade points back to letter grade
+    const sortedGrades = Object.entries(GRADE_TO_POINTS).sort((a, b) => b[1] - a[1]);
+    let closestGrade = 'F';
+    let closestDiff = 999;
+    for (const [grade, points] of sortedGrades) {
+      const diff = Math.abs(points - stats.avg_grade_points);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closestGrade = grade;
+      }
+    }
+    stats.avg_grade = closestGrade;
+    return stats;
+  });
+
+  // Sort by average grade points (descending)
+  ownerStats.sort((a, b) => b.avg_grade_points - a.avg_grade_points);
+
+  return (
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Rank
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Owner
+            </th>
+            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Drafts
+            </th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Total Value
+            </th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Avg Value
+            </th>
+            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Avg Grade
+            </th>
+            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              All Grades
+            </th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {ownerStats.map((stats, index) => (
+            <tr key={stats.user_id} className="hover:bg-gray-50">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
+                #{index + 1}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                {stats.username}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                {stats.total_drafts}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                {stats.total_value.toFixed(1)}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                {stats.avg_value.toFixed(1)}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-center">
+                <SmallGradeBadge grade={stats.avg_grade} />
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-center">
+                <div className="flex items-center justify-center gap-1 flex-wrap">
+                  {stats.grades.map((grade, idx) => (
+                    <span key={idx} className="text-xs text-gray-600">
+                      {grade}{idx < stats.grades.length - 1 ? ',' : ''}
+                    </span>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -292,6 +428,7 @@ function DraftCard({ draft }: { draft: DraftGrade }) {
 export default function DraftRankings() {
   const [draftType, setDraftType] = useState<string | undefined>(undefined);
   const [ownerId, setOwnerId] = useState<string | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<'individual' | 'aggregate'>('individual');
 
   const { data: ownersData } = useQuery({
     queryKey: ['owners'],
@@ -319,6 +456,9 @@ export default function DraftRankings() {
   // Find selected owner's name
   const selectedOwner = owners.find((o) => o.user_id === ownerId);
   const selectedOwnerName = selectedOwner?.display_name || '';
+
+  // Determine if we should show aggregate view toggle
+  const showAggregateToggle = !ownerId && drafts.length > 1;
 
   if (isLoading) {
     return (
@@ -358,7 +498,7 @@ export default function DraftRankings() {
               className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white text-gray-900"
             >
               <option value="">All Drafts</option>
-              <option value="startup">Startup Draft (25 rounds)</option>
+              <option value="startup">Startup Draft</option>
               <option value="rookie">Rookie Drafts</option>
             </select>
           </div>
@@ -369,7 +509,7 @@ export default function DraftRankings() {
               onChange={(e) => setOwnerId(e.target.value || undefined)}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white text-gray-900"
             >
-              <option value="">All Owners (Comparison View)</option>
+              <option value="">All Owners</option>
               {owners.map((o) => (
                 <option key={o.user_id} value={o.user_id}>
                   {o.display_name}
@@ -377,13 +517,26 @@ export default function DraftRankings() {
               ))}
             </select>
           </div>
+          {showAggregateToggle && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">View:</label>
+              <select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as 'individual' | 'aggregate')}
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white text-gray-900"
+              >
+                <option value="individual">Individual Drafts</option>
+                <option value="aggregate">Aggregate Ranking</option>
+              </select>
+            </div>
+          )}
           <div className="text-sm text-gray-500 ml-auto">
             {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
           </div>
         </div>
       </div>
 
-      {/* Content - switch between owner table view and comparison view */}
+      {/* Content - switch between different view modes */}
       {drafts.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <p className="text-gray-500">No drafts found.</p>
@@ -401,15 +554,28 @@ export default function DraftRankings() {
           </div>
           <OwnerDraftsTable drafts={drafts} ownerName={selectedOwnerName} />
         </div>
-      ) : (
-        // Comparison view - show all owners in each draft
+      ) : viewMode === 'aggregate' ? (
+        // Aggregate ranking view - rank all owners across all drafts
         <div>
           <div className="mb-4">
             <h2 className="text-2xl font-semibold text-gray-900">
-              All Owners Comparison
+              Cross-Draft Rankings
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Compare all owners' performance in each draft
+              All owners ranked by aggregate performance across {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <CrossDraftRankingTable drafts={drafts} />
+        </div>
+      ) : (
+        // Individual draft view - show all owners in each draft
+        <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900">
+              Individual Draft Performance
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              View each draft separately with all owners' performance
             </p>
           </div>
           {drafts.map((draft) => (
