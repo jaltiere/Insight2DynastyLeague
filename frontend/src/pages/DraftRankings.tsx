@@ -27,6 +27,14 @@ const GRADE_COLORS: Record<string, string> = {
   F: 'bg-red-600 text-white',
 };
 
+const GRADE_ORDER: Record<string, number> = {
+  'A+': 0, A: 1, 'A-': 2,
+  'B+': 3, B: 4, 'B-': 5,
+  'C+': 6, C: 7, 'C-': 8,
+  'D+': 9, D: 10, 'D-': 11,
+  F: 12,
+};
+
 interface PickDetail {
   pick_no: number;
   round: number;
@@ -88,6 +96,105 @@ function GradeBadge({ grade }: { grade: string }) {
   );
 }
 
+function SmallGradeBadge({ grade }: { grade: string }) {
+  const colors = GRADE_COLORS[grade] || 'bg-gray-400 text-white';
+  return (
+    <span className={`${colors} text-sm font-bold px-2 py-0.5 rounded inline-block min-w-[2.5rem] text-center`}>
+      {grade}
+    </span>
+  );
+}
+
+// Owner's individual draft table (when owner is selected)
+function OwnerDraftsTable({ drafts, ownerName }: { drafts: DraftGrade[]; ownerName: string }) {
+  // Extract owner's performance from each draft and sort by grade
+  const ownerDraftPerformance = drafts
+    .map((draft) => {
+      const ownerData = draft.owners.find((o) => o.username === ownerName);
+      return {
+        draft,
+        ownerData,
+      };
+    })
+    .filter((item) => item.ownerData) // Only include drafts where owner participated
+    .sort((a, b) => {
+      // Sort by grade (best to worst)
+      const gradeA = GRADE_ORDER[a.ownerData!.grade] ?? 99;
+      const gradeB = GRADE_ORDER[b.ownerData!.grade] ?? 99;
+      return gradeA - gradeB;
+    });
+
+  if (ownerDraftPerformance.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow p-8 text-center">
+        <p className="text-gray-500">No draft data found for {ownerName}.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Year
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Type
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Picks
+            </th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Total Value
+            </th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Avg/Pick
+            </th>
+            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              vs Average
+            </th>
+            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Grade
+            </th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {ownerDraftPerformance.map(({ draft, ownerData }) => (
+            <tr key={draft.draft_id} className="hover:bg-gray-50">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                {draft.year}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {draft.rounds >= 20 ? 'Startup' : 'Rookie'} ({draft.rounds}r)
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {ownerData!.num_picks}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                {ownerData!.total_value.toFixed(1)}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                {ownerData!.avg_value_per_pick.toFixed(1)}
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                <span className={ownerData!.value_vs_average >= 1 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                  {(ownerData!.value_vs_average * 100).toFixed(0)}%
+                </span>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-center">
+                <SmallGradeBadge grade={ownerData!.grade} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Comparison view - show all owners in each draft
 function OwnerCard({ owner }: { owner: OwnerDraft }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -163,7 +270,7 @@ function DraftCard({ draft }: { draft: DraftGrade }) {
           <div className="flex items-center gap-3">
             <span className="text-lg font-bold text-gray-900">{draft.year} Draft</span>
             <span className="text-sm text-gray-500">
-              {draft.type} • {draft.rounds} rounds • {draft.total_picks} picks
+              {draft.rounds >= 20 ? 'Startup' : 'Rookie'} • {draft.rounds} rounds • {draft.total_picks} picks
             </span>
           </div>
           <div className="text-sm text-gray-500">
@@ -209,6 +316,10 @@ export default function DraftRankings() {
     }))
     .sort((a: Owner, b: Owner) => a.display_name.localeCompare(b.display_name));
 
+  // Find selected owner's name
+  const selectedOwner = owners.find((o) => o.user_id === ownerId);
+  const selectedOwnerName = selectedOwner?.display_name || '';
+
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -247,7 +358,7 @@ export default function DraftRankings() {
               className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white text-gray-900"
             >
               <option value="">All Drafts</option>
-              <option value="startup">Startup Draft</option>
+              <option value="startup">Startup Draft (25 rounds)</option>
               <option value="rookie">Rookie Drafts</option>
             </select>
           </div>
@@ -258,7 +369,7 @@ export default function DraftRankings() {
               onChange={(e) => setOwnerId(e.target.value || undefined)}
               className="border border-gray-300 rounded px-3 py-1.5 text-sm bg-white text-gray-900"
             >
-              <option value="">All Owners</option>
+              <option value="">All Owners (Comparison View)</option>
               {owners.map((o) => (
                 <option key={o.user_id} value={o.user_id}>
                   {o.display_name}
@@ -272,13 +383,35 @@ export default function DraftRankings() {
         </div>
       </div>
 
-      {/* Draft cards */}
+      {/* Content - switch between owner table view and comparison view */}
       {drafts.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <p className="text-gray-500">No drafts found.</p>
         </div>
-      ) : (
+      ) : ownerId ? (
+        // Owner table view - show selected owner's draft performance
         <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900">
+              {selectedOwnerName}'s Draft Performance
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Sorted by grade (best to worst)
+            </p>
+          </div>
+          <OwnerDraftsTable drafts={drafts} ownerName={selectedOwnerName} />
+        </div>
+      ) : (
+        // Comparison view - show all owners in each draft
+        <div>
+          <div className="mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900">
+              All Owners Comparison
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Compare all owners' performance in each draft
+            </p>
+          </div>
           {drafts.map((draft) => (
             <DraftCard key={draft.draft_id} draft={draft} />
           ))}

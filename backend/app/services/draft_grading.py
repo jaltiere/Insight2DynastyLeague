@@ -166,16 +166,22 @@ class DraftGradingService:
     async def _fetch_drafts(
         self, draft_type: Optional[str] = None
     ) -> List[Draft]:
-        """Fetch all completed drafts, optionally filtered by type."""
+        """Fetch all completed drafts, optionally filtered by type.
+
+        Startup draft = 25-round linear draft (the initial league draft)
+        Rookie drafts = all subsequent annual rookie drafts
+        """
         query = select(Draft).where(Draft.status == "complete")
 
-        # Map draft_type filter to actual draft types
-        # "startup" = first draft (year 2020 or type "startup")
-        # "rookie" = all other drafts
+        # Filter by draft type:
+        # "startup" = 25-round linear draft
+        # "rookie" = all other drafts (typically 3-5 rounds)
         if draft_type == "startup":
-            query = query.where(Draft.year == 2020)
+            # Startup draft has 25 rounds and type "linear"
+            query = query.where(Draft.rounds >= 20, Draft.type == "linear")
         elif draft_type == "rookie":
-            query = query.where(Draft.year > 2020)
+            # Rookie drafts have fewer rounds (typically 3-5)
+            query = query.where(Draft.rounds < 20)
 
         query = query.order_by(Draft.year.desc())
         result = await self.db.execute(query)

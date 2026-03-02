@@ -16,7 +16,7 @@ from tests.conftest import (
 # ---------------------------------------------------------------------------
 
 
-async def _setup_basic_draft(db, year=2020, draft_type="startup", rounds=3):
+async def _setup_basic_draft(db, year=2020, draft_type="linear", rounds=3):
     """Create a basic draft scenario with 2 owners.
     Returns (draft, season, roster1, roster2, user1, user2)."""
     league = await create_league(db)
@@ -164,7 +164,11 @@ async def test_draft_grades_basic_draft(client, db_session):
 
 
 async def test_draft_grades_filter_by_type(client, db_session):
-    """Should be able to filter by draft type (startup vs rookie)."""
+    """Should be able to filter by draft type (startup vs rookie).
+
+    Startup draft = 25-round linear draft
+    Rookie drafts = shorter drafts (typically 3-5 rounds)
+    """
     # Create league and users once
     league = await create_league(db_session)
     u1 = await create_user(
@@ -174,7 +178,7 @@ async def test_draft_grades_filter_by_type(client, db_session):
         db_session, id="user2", username="owner2", display_name="Owner Two"
     )
 
-    # Create startup draft (2020)
+    # Create startup draft (25 rounds, linear)
     season1 = await create_season(
         db_session, league, year=2020, regular_season_weeks=14
     )
@@ -185,9 +189,9 @@ async def test_draft_grades_filter_by_type(client, db_session):
         season1,
         id="draft_2020",
         year=2020,
-        type="startup",
+        type="linear",  # startup drafts are linear
         status="complete",
-        rounds=3,
+        rounds=25,  # startup draft has 25 rounds
         draft_order={"1": 1, "2": 2},
     )
     p1 = await create_player(
@@ -195,7 +199,7 @@ async def test_draft_grades_filter_by_type(client, db_session):
     )
     await _add_draft_pick(db_session, draft1, 1, 1, 1, p1)
 
-    # Create rookie draft (2021)
+    # Create rookie draft (3 rounds, snake)
     season2 = await create_season(
         db_session, league, year=2021, regular_season_weeks=14
     )
@@ -206,9 +210,9 @@ async def test_draft_grades_filter_by_type(client, db_session):
         season2,
         id="draft_2021",
         year=2021,
-        type="rookie",
+        type="snake",  # rookie drafts are snake
         status="complete",
-        rounds=3,
+        rounds=3,  # rookie drafts have fewer rounds
         draft_order={"1": 1, "2": 2},
     )
     p2 = await create_player(
@@ -218,19 +222,21 @@ async def test_draft_grades_filter_by_type(client, db_session):
 
     await db_session.flush()
 
-    # Test filter by startup
+    # Test filter by startup (25 rounds, linear)
     response = await client.get("/api/draft-grades?draft_type=startup")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
     assert data["drafts"][0]["year"] == 2020
+    assert data["drafts"][0]["rounds"] == 25
 
-    # Test filter by rookie
+    # Test filter by rookie (fewer rounds)
     response = await client.get("/api/draft-grades?draft_type=rookie")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
     assert data["drafts"][0]["year"] == 2021
+    assert data["drafts"][0]["rounds"] == 3
 
     # Test no filter (all drafts)
     response = await client.get("/api/draft-grades")
