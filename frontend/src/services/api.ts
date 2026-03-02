@@ -75,6 +75,12 @@ export const api = {
       params: { user_id: userId, type, ...(season ? { season } : {}) },
     }).then(res => res.data),
 
+  // Trade Grades
+  getTradeGrades: (params?: { season?: number; sort?: string; owner_id?: string }) =>
+    apiClient.get('/trade-grades', { params }).then(res => res.data),
+  getTradeGrade: (tradeId: string) =>
+    apiClient.get(`/trade-grades/${tradeId}`).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

@@ -37,6 +37,9 @@ export default function Layout() {
               <Link to="/transactions" className="font-semibold hover:text-blue-200 transition">
                 Transactions
               </Link>
+              <Link to="/trade-grades" className="font-semibold hover:text-blue-200 transition">
+                Trade Grades
+              </Link>
               <Link to="/league-history" className="font-semibold hover:text-blue-200 transition">
                 History
               </Link>
