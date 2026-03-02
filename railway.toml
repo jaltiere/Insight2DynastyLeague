@@ -5,9 +5,9 @@
 builder = "nixpacks"
 
 [deploy]
-# Don't run migrations in start command - they should be run separately
-# Run migrations manually: railway run alembic upgrade head
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
+# TEMPORARY: Running migrations in start command for initial deployment
+# TODO: Remove after first successful migration
+startCommand = "cd backend && alembic upgrade head && cd .. && uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
 
 # Environment variables (set in Railway dashboard)
 # Required:
