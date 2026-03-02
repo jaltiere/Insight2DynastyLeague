@@ -3,10 +3,10 @@
 
 [build]
 builder = "nixpacks"
+watchPatterns = ["backend/**"]
 
 [deploy]
-# TEMPORARY: Running migrations once, will remove after successful deploy
-startCommand = "cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
 # Environment variables (set in Railway dashboard)
 # Required:

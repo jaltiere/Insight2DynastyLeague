@@ -1,16 +1,14 @@
 # Nixpacks configuration for Railway
-# This tells Nixpacks how to build and run the Python backend
+# Set working directory to backend
+
+[variables]
+NIXPACKS_WORKING_DIR = "backend"
 
 [phases.setup]
 nixPkgs = ["python311", "gcc", "libmysqlclient"]
 
 [phases.install]
-cmds = [
-  "pip install -r backend/requirements.txt"
-]
-
-# Note: Migrations should be run manually via Railway Shell after deployment
-# Run: railway shell -> cd backend -> alembic upgrade head
+cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+cmd = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
