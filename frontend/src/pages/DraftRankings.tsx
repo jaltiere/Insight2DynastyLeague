@@ -94,6 +94,12 @@ interface AggregateOwnerStats {
   total_value: number;
   avg_value: number;
   grades: string[];
+  draft_details: Array<{
+    year: number;
+    grade: string;
+    total_value: number;
+    picks: PickDetail[];
+  }>;
 }
 
 function PositionBadge({ position }: { position: string | null }) {
@@ -124,8 +130,49 @@ function SmallGradeBadge({ grade }: { grade: string }) {
   );
 }
 
+function PicksDetailView({ picks }: { picks: PickDetail[] }) {
+  return (
+    <div className="px-6 py-4 bg-gray-50">
+      <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
+        Draft Picks
+      </div>
+      <div className="space-y-2">
+        {picks.map((pick) => (
+          <div key={pick.pick_no} className="bg-white rounded p-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-xs text-gray-500 mr-2 w-12">
+                  {pick.round}.{pick.pick_no}
+                </span>
+                <PositionBadge position={pick.position} />
+                <span className="text-sm font-medium text-gray-900">{pick.player_name}</span>
+                {pick.team && (
+                  <span className="text-xs text-gray-500 ml-1.5">({pick.team})</span>
+                )}
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-gray-900">
+                  {pick.weighted_points.toFixed(1)}
+                </span>
+                <span className="text-xs text-gray-500 ml-1">pts</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 ml-14">
+              <span>{pick.starter_weeks}w starter</span>
+              <span>{pick.bench_weeks}w bench</span>
+              <span>{pick.total_weeks}w total</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Cross-draft aggregate ranking table
 function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
+  const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
+
   // Aggregate stats by owner across all drafts
   const ownerStatsMap = new Map<string, AggregateOwnerStats>();
 
@@ -139,6 +186,12 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
         existing.total_value += owner.total_value;
         existing.avg_grade_points = (existing.avg_grade_points * (existing.total_drafts - 1) + gradePoints) / existing.total_drafts;
         existing.grades.push(owner.grade);
+        existing.draft_details.push({
+          year: draft.year,
+          grade: owner.grade,
+          total_value: owner.total_value,
+          picks: owner.picks,
+        });
       } else {
         ownerStatsMap.set(owner.user_id, {
           user_id: owner.user_id,
@@ -149,6 +202,12 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
           total_value: owner.total_value,
           avg_value: owner.total_value,
           grades: [owner.grade],
+          draft_details: [{
+            year: draft.year,
+            grade: owner.grade,
+            total_value: owner.total_value,
+            picks: owner.picks,
+          }],
         });
       }
     });
@@ -157,6 +216,8 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
   // Calculate averages and determine letter grade
   const ownerStats = Array.from(ownerStatsMap.values()).map((stats) => {
     stats.avg_value = stats.total_value / stats.total_drafts;
+    // Sort draft details by year descending
+    stats.draft_details.sort((a, b) => b.year - a.year);
     // Map avg grade points back to letter grade
     const sortedGrades = Object.entries(GRADE_TO_POINTS).sort((a, b) => b[1] - a[1]);
     let closestGrade = 'F';
@@ -201,39 +262,93 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               All Grades
             </th>
+            <th className="px-6 py-3"></th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {ownerStats.map((stats, index) => (
-            <tr key={stats.user_id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
-                #{index + 1}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {stats.username}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                {stats.total_drafts}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                {stats.total_value.toFixed(1)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                {stats.avg_value.toFixed(1)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center">
-                <SmallGradeBadge grade={stats.avg_grade} />
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center">
-                <div className="flex items-center justify-center gap-1 flex-wrap">
-                  {stats.grades.map((grade, idx) => (
-                    <span key={idx} className="text-xs text-gray-600">
-                      {grade}{idx < stats.grades.length - 1 ? ',' : ''}
-                    </span>
-                  ))}
-                </div>
-              </td>
-            </tr>
+            <>
+              <tr
+                key={stats.user_id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => setExpandedOwner(expandedOwner === stats.user_id ? null : stats.user_id)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-500">
+                  #{index + 1}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {stats.username}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                  {stats.total_drafts}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {stats.total_value.toFixed(1)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                  {stats.avg_value.toFixed(1)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <SmallGradeBadge grade={stats.avg_grade} />
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <div className="flex items-center justify-center gap-1 flex-wrap">
+                    {stats.grades.map((grade, idx) => (
+                      <span key={idx} className="text-xs text-gray-600">
+                        {grade}{idx < stats.grades.length - 1 ? ',' : ''}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-400">
+                  {expandedOwner === stats.user_id ? '\u25B2' : '\u25BC'}
+                </td>
+              </tr>
+              {expandedOwner === stats.user_id && (
+                <tr>
+                  <td colSpan={8} className="px-0 py-0">
+                    <div className="bg-gray-50 px-6 py-4">
+                      <div className="text-sm font-semibold text-gray-700 mb-3">
+                        Draft Breakdown
+                      </div>
+                      <div className="space-y-3">
+                        {stats.draft_details.map((detail, idx) => (
+                          <div key={idx} className="bg-white rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-semibold text-gray-900">
+                                {detail.year} Draft
+                              </span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm text-gray-500">
+                                  {detail.total_value.toFixed(1)} pts
+                                </span>
+                                <SmallGradeBadge grade={detail.grade} />
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              {detail.picks.map((pick) => (
+                                <div key={pick.pick_no} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
+                                  <div className="flex items-center">
+                                    <span className="text-gray-500 mr-2 w-10">
+                                      {pick.round}.{pick.pick_no}
+                                    </span>
+                                    <PositionBadge position={pick.position} />
+                                    <span className="text-gray-900">{pick.player_name}</span>
+                                  </div>
+                                  <span className="text-gray-600">
+                                    {pick.weighted_points.toFixed(1)} pts
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </>
           ))}
         </tbody>
       </table>
@@ -243,6 +358,8 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
 
 // Owner's individual draft table (when owner is selected)
 function OwnerDraftsTable({ drafts, ownerName }: { drafts: DraftGrade[]; ownerName: string }) {
+  const [expandedDraft, setExpandedDraft] = useState<string | null>(null);
+
   // Extract owner's performance from each draft and sort by grade
   const ownerDraftPerformance = drafts
     .map((draft) => {
@@ -294,35 +411,52 @@ function OwnerDraftsTable({ drafts, ownerName }: { drafts: DraftGrade[]; ownerNa
             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Grade
             </th>
+            <th className="px-6 py-3"></th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
           {ownerDraftPerformance.map(({ draft, ownerData }) => (
-            <tr key={draft.draft_id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {draft.year}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {draft.rounds >= 20 ? 'Startup' : 'Rookie'} ({draft.rounds}r)
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {ownerData!.num_picks}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                {ownerData!.total_value.toFixed(1)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                {ownerData!.avg_value_per_pick.toFixed(1)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                <span className={ownerData!.value_vs_average >= 1 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-                  {(ownerData!.value_vs_average * 100).toFixed(0)}%
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center">
-                <SmallGradeBadge grade={ownerData!.grade} />
-              </td>
-            </tr>
+            <>
+              <tr
+                key={draft.draft_id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => setExpandedDraft(expandedDraft === draft.draft_id ? null : draft.draft_id)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {draft.year}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {draft.rounds >= 20 ? 'Startup' : 'Rookie'} ({draft.rounds}r)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {ownerData!.num_picks}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {ownerData!.total_value.toFixed(1)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                  {ownerData!.avg_value_per_pick.toFixed(1)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                  <span className={ownerData!.value_vs_average >= 1 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                    {(ownerData!.value_vs_average * 100).toFixed(0)}%
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <SmallGradeBadge grade={ownerData!.grade} />
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-400">
+                  {expandedDraft === draft.draft_id ? '\u25B2' : '\u25BC'}
+                </td>
+              </tr>
+              {expandedDraft === draft.draft_id && ownerData && (
+                <tr>
+                  <td colSpan={8} className="px-0 py-0">
+                    <PicksDetailView picks={ownerData.picks} />
+                  </td>
+                </tr>
+              )}
+            </>
           ))}
         </tbody>
       </table>
@@ -549,7 +683,7 @@ export default function DraftRankings() {
               {selectedOwnerName}'s Draft Performance
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Sorted by grade (best to worst)
+              Sorted by grade (best to worst) • Click to expand
             </p>
           </div>
           <OwnerDraftsTable drafts={drafts} ownerName={selectedOwnerName} />
@@ -562,7 +696,7 @@ export default function DraftRankings() {
               Cross-Draft Rankings
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              All owners ranked by aggregate performance across {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
+              All owners ranked by aggregate performance across {drafts.length} draft{drafts.length !== 1 ? 's' : ''} • Click to expand
             </p>
           </div>
           <CrossDraftRankingTable drafts={drafts} />
@@ -575,7 +709,7 @@ export default function DraftRankings() {
               Individual Draft Performance
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              View each draft separately with all owners' performance
+              View each draft separately with all owners' performance • Click cards to expand
             </p>
           </div>
           {drafts.map((draft) => (
