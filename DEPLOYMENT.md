@@ -80,21 +80,37 @@ This guide walks you through deploying the Insight2Dynasty League application to
 
 ### Step 5: Run Database Migrations
 
-1. In Railway backend service, click **"Settings"** → **"Deploy"**
-2. Find the deployed service URL
-3. Open Railway CLI or use the web-based shell:
+**Important:** Migrations must be run separately from the application start to avoid health check timeouts.
+
+#### Option A: Using Railway CLI (Recommended)
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login and link to your project
+railway login
+railway link
+
+# Run migrations
+railway run python backend/migrate.py
+```
+
+#### Option B: Using Railway Shell
+1. In Railway backend service, click **"Settings"** → **"Shell"**
+2. Run:
    ```bash
-   cd backend
-   alembic upgrade head
+   python backend/migrate.py
    ```
 
-   Or run locally against production database:
-   ```bash
-   # Set production DATABASE_URL temporarily
-   export DATABASE_URL="<railway-database-url>"
-   cd backend
-   alembic upgrade head
-   ```
+#### Option C: Run Locally Against Production Database
+```bash
+# Set production DATABASE_URL temporarily (get from Railway dashboard)
+export DATABASE_URL="<railway-database-url>"
+cd backend
+alembic upgrade head
+```
+
+**Verify migrations succeeded** by checking the logs for "✅ Migrations completed successfully"
 
 ### Step 6: Initial Data Sync
 
@@ -201,8 +217,21 @@ If you prefer Render over Railway:
 
 ### Health Checks
 
-- Backend: `https://your-backend.railway.app/api/health`
-- Frontend: `https://your-frontend.railway.app/`
+Test your deployed services:
+
+```bash
+# Backend health check
+curl https://your-backend.railway.app/api/health
+
+# Expected response:
+# {"status":"healthy","service":"Insight2Dynasty API","version":"1.0.0"}
+
+# Backend API docs
+https://your-backend.railway.app/docs
+
+# Frontend
+https://your-frontend.railway.app/
+```
 
 ### Logs
 
@@ -236,28 +265,95 @@ curl -X POST https://your-backend.railway.app/api/cron/sync \
 
 ## Troubleshooting
 
-### Deployment Fails
+### Health Check Fails / Deployment Fails
 
-- Check Railway build logs
-- Verify all environment variables are set
-- Ensure `requirements.txt` includes all dependencies
+**Symptom:** Railway shows "Health check failed" or deployment crashes
+
+**Solutions:**
+1. **Check if migrations were run first:**
+   ```bash
+   railway run python backend/migrate.py
+   ```
+
+2. **Check Railway logs** for error messages:
+   - Go to backend service → **Deployments** → Click latest deployment → **View Logs**
+   - Look for Python errors, import issues, or database connection errors
+
+3. **Verify all required environment variables are set:**
+   - `DATABASE_URL` (should be auto-populated by MySQL plugin)
+   - `SLEEPER_LEAGUE_ID`
+   - `CORS_ORIGINS`
+   - `CRON_SECRET`
+
+4. **Test health endpoint locally:**
+   ```bash
+   # In Railway logs, find the internal URL
+   curl https://your-service.railway.internal/api/health
+   ```
+
+5. **Common issues:**
+   - Missing `DATABASE_URL` → Add MySQL database plugin
+   - Import errors → Check Python version (should be 3.11+)
+   - Port binding → App should use `$PORT` environment variable
 
 ### Database Connection Issues
 
+**Symptom:** `sqlalchemy.exc.OperationalError` or connection refused
+
+**Solutions:**
 - Verify `DATABASE_URL` format: `mysql+aiomysql://user:pass@host:port/db`
-- Check if MySQL service is running
-- Run `alembic upgrade head` to apply migrations
+- Check if MySQL service is running in Railway dashboard
+- Ensure MySQL plugin is added and connected to backend service
+- Check if database credentials are correct
 
 ### CORS Errors
 
+**Symptom:** Browser console shows CORS policy errors
+
+**Solutions:**
 - Update `CORS_ORIGINS` in backend to include frontend URL
-- Redeploy backend after updating
+- Format: `CORS_ORIGINS=https://your-frontend.railway.app,http://localhost:5173`
+- Redeploy backend after updating environment variables
 
 ### Scheduled Sync Not Running
 
-- Check GitHub Actions workflow status
-- Verify `CRON_SECRET` matches in GitHub and Railway
+**Symptom:** Data not updating daily
+
+**Solutions:**
+- Check GitHub Actions workflow status in Actions tab
+- Verify `CRON_SECRET` matches in GitHub secrets and Railway variables
 - Check Railway cron job configuration
+- Test endpoint manually:
+  ```bash
+  curl -X POST https://your-backend.railway.app/api/cron/sync \
+    -H "Authorization: Bearer YOUR_CRON_SECRET"
+  ```
+
+### Build Fails / Nixpacks Errors
+
+**Symptom:** Build process fails during deployment
+
+**Solutions:**
+- Check if `backend/requirements.txt` exists and is valid
+- Ensure Python 3.11+ is specified
+- Check Railway build logs for specific error
+- Try removing `nixpacks.toml` and let Railway auto-detect
+
+### Application Crashes After Deploy
+
+**Symptom:** Service starts but crashes within seconds/minutes
+
+**Solutions:**
+1. Check logs for uncaught exceptions
+2. Verify database migrations are up to date
+3. Check if all required environment variables are set
+4. Look for import errors or missing dependencies
+5. Test locally with production environment variables:
+   ```bash
+   export DATABASE_URL="<railway-url>"
+   export DEBUG=False
+   uvicorn app.main:app --app-dir backend
+   ```
 
 ---
 
