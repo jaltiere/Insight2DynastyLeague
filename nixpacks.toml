@@ -9,10 +9,8 @@ cmds = [
   "pip install -r backend/requirements.txt"
 ]
 
-[phases.migrate]
-cmds = [
-  "cd backend && alembic upgrade head || echo 'Migration failed or already up to date'"
-]
+# Note: Migrations should be run manually via Railway Shell after deployment
+# Run: railway shell -> cd backend -> alembic upgrade head
 
 [start]
 cmd = "uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend"
