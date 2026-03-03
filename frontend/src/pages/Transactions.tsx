@@ -54,13 +54,14 @@ interface ModalProps {
   typeName: string;
   userId: string;
   type: string;
+  season?: number;
   onClose: () => void;
 }
 
-function TransactionModal({ teamName, typeName, userId, type, onClose }: ModalProps) {
+function TransactionModal({ teamName, typeName, userId, type, season, onClose }: ModalProps) {
   const { data, isLoading } = useQuery({
-    queryKey: ['transactionsByOwner', userId, type],
-    queryFn: () => api.getTransactionsByOwner(userId, type),
+    queryKey: ['transactionsByOwner', userId, type, season],
+    queryFn: () => api.getTransactionsByOwner(userId, type, season),
   });
 
   useEffect(() => {
@@ -224,6 +225,7 @@ function TransactionModal({ teamName, typeName, userId, type, onClose }: ModalPr
 export default function Transactions() {
   const [sortField, setSortField] = useState<SortField>('total');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [selectedSeason, setSelectedSeason] = useState<number | undefined>(undefined);
   const [modal, setModal] = useState<{
     userId: string;
     teamName: string;
@@ -231,9 +233,14 @@ export default function Transactions() {
     typeName: string;
   } | null>(null);
 
+  const { data: seasonsData } = useQuery({
+    queryKey: ['seasons'],
+    queryFn: () => api.getSeasons(),
+  });
+
   const { data: summaryData, isLoading, error } = useQuery({
-    queryKey: ['transactionSummary'],
-    queryFn: () => api.getTransactionSummary(),
+    queryKey: ['transactionSummary', selectedSeason],
+    queryFn: () => api.getTransactionSummary(selectedSeason),
   });
 
   const handleSort = (field: SortField) => {
@@ -289,13 +296,29 @@ export default function Transactions() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold mb-6">Transactions</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
+        <h1 className="text-4xl font-bold">Transactions</h1>
+        <div className="flex items-center gap-2">
+          <label htmlFor="season-filter" className="text-sm font-medium text-gray-700">Season:</label>
+          <select
+            id="season-filter"
+            value={selectedSeason ?? ''}
+            onChange={(e) => setSelectedSeason(e.target.value ? Number(e.target.value) : undefined)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">All Seasons</option>
+            {seasonsData?.seasons?.map((year: number) => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {/* Summary table */}
       <div className="bg-white rounded-lg shadow">
         <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
           <h2 className="text-xl font-semibold">
-            Transaction Summary
+            Transaction Summary{selectedSeason ? ` — ${selectedSeason}` : ''}
           </h2>
         </div>
         <div className="overflow-x-auto">
@@ -388,6 +411,7 @@ export default function Transactions() {
           typeName={modal.typeName}
           userId={modal.userId}
           type={modal.type}
+          season={selectedSeason}
           onClose={() => setModal(null)}
         />
       )}
