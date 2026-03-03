@@ -254,7 +254,7 @@ export default function Home() {
     divisions.push({
       num: i,
       name: standings?.division_names?.[String(i)] || `Division ${i}`,
-      teams: standings?.standings.filter((team: any) => team.division === i) || [],
+      teams: standings?.standings?.filter((team: any) => team.division === i) || [],
     });
   }
 
