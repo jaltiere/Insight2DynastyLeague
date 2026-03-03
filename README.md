@@ -14,14 +14,17 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 - **Owner Records** - Historical performance and season breakdowns
 - **Draft Results** - Year-by-year draft boards with all picks
 - **League History** - Champions, division winners, and consolation bracket winners
+- **Mobile-Responsive Design** - Optimized for phones, tablets, and desktops with hamburger menu navigation
+- **Dark Mode** - Toggle between light and dark themes
 
 ## Tech Stack
 
 ### Frontend
 - React 18 + Vite + TypeScript
-- Tailwind CSS
-- React Query
-- React Router v6
+- Tailwind CSS (mobile-first responsive design)
+- React Query (data fetching and caching)
+- React Router v6 (client-side routing)
+- Responsive hamburger navigation for mobile devices
 
 ### Backend
 - FastAPI (Python 3.11+)

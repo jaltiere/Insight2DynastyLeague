@@ -240,12 +240,25 @@ git pull origin main
 - Use React Query for all API calls
 - Component-based architecture
 - Tailwind for all styling
+- **Mobile-first responsive design** - Always consider mobile users first
+
+### Responsive Design Guidelines
+- **Mobile-first approach**: Design for mobile screens first, then scale up for desktop
+- **Responsive navigation**: Use hamburger menu for mobile (< 768px), horizontal nav for desktop
+- **Touch-friendly targets**: Minimum 48x48px touch targets for buttons/links
+- **Tailwind breakpoints**:
+  - Mobile: default (< 640px)
+  - Tablet: `md:` (≥ 768px)
+  - Desktop: `lg:` (≥ 1024px)
+- **Test on multiple devices**: Phone, tablet, desktop
+- **Avoid horizontal scroll**: All content must fit within viewport width
+- **Readable text sizes**: Minimum 14px on mobile, 16px on desktop
 
 ### General
 - Keep components small and focused
 - Reuse components where possible
 - Handle loading and error states
-- Mobile-first responsive design
+- Always add optional chaining for nullable API data
 - Clear, descriptive variable names
 
 ## Data Sync Strategy
@@ -256,11 +269,30 @@ git pull origin main
 - Sleeper API is read-only - we cache everything in MySQL
 
 ## Testing & Verification
-1. Backend API docs: http://localhost:8000/docs
-2. Frontend dev server: http://localhost:5173
-3. Test each page loads correctly
-4. Verify data sync works
-5. Check responsive design on mobile
+
+### Development Testing
+1. **Backend API docs**: http://localhost:8000/docs
+2. **Frontend dev server**: http://localhost:5173
+3. **Test each page loads correctly** on all screen sizes
+4. **Verify data sync works** (initial sync + incremental sync)
+
+### Responsive Design Testing
+Test on multiple viewport sizes:
+- **Mobile**: 375px, 390px, 414px (iPhone sizes)
+- **Tablet**: 768px, 820px, 1024px (iPad sizes)
+- **Desktop**: 1280px, 1440px, 1920px
+
+**Browser DevTools:**
+1. Open DevTools (F12) → Toggle device toolbar (Ctrl+Shift+M)
+2. Test common devices: iPhone 12/13/14, iPad, Desktop
+3. Check navigation menu (hamburger on mobile, horizontal on desktop)
+4. Verify no horizontal scrolling
+5. Test touch targets are at least 48x48px
+
+**Production Testing:**
+- Test on actual mobile devices (iOS Safari, Android Chrome)
+- Test in different orientations (portrait and landscape)
+- Check dark mode on all devices
 
 ### Unit Testing Requirements
 - **Always add or update unit tests** when adding new features, fixing bugs, or modifying API endpoints
