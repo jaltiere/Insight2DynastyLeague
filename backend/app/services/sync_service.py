@@ -43,6 +43,11 @@ class SyncService:
             league_chain.reverse()
 
             nfl_state = await self.client.get_nfl_state()
+
+            # Sync players FIRST (before any drafts that reference them)
+            current_season_year = int(nfl_state.get("season", 2024))
+            await self._sync_players(current_season_year)
+
             synced_seasons = []
 
             for league_id, league_data in league_chain:
@@ -97,10 +102,6 @@ class SyncService:
 
                 synced_seasons.append(year)
                 await self.db.flush()
-
-            # Sync players once (shared across all seasons)
-            current_season_year = int(nfl_state.get("season", 2024))
-            await self._sync_players(current_season_year)
 
             await self.db.commit()
 
