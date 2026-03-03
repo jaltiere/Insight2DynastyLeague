@@ -27,6 +27,33 @@ Insight2Dynasty is a fantasy football dynasty league website that integrates wit
   - Rate limit: < 1000 calls/minute
   - Base URL: https://api.sleeper.app/v1
 
+### Production Deployment
+- **Platform**: Railway (https://railway.app)
+- **Frontend**: www.insight2dynasty.com (Static React app)
+- **Backend**: api.insight2dynasty.com (FastAPI service)
+- **Database**: Railway MySQL 8.0
+- **CI/CD**: GitHub Actions for testing, Railway auto-deploy on push to main
+- **Automated Sync**: GitHub Actions daily at 6 AM UTC
+- **Domain Registrar**: GoDaddy
+
+**Required Dependencies (Already in requirements.txt):**
+- `cryptography>=42.0.0` - Required for MySQL 8.0 authentication (caching_sha2_password)
+
+**Environment Variables:**
+
+Backend (Railway):
+- `DATABASE_URL` - Auto-populated by Railway MySQL plugin
+- `SLEEPER_LEAGUE_ID` - 1313933992642220032
+- `CORS_ORIGINS` - https://www.insight2dynasty.com,http://localhost:5173
+- `CRON_SECRET` - Secure random string for scheduled sync endpoint
+- `DEBUG` - False (production)
+- `APP_VERSION` - 1.0.0
+
+Frontend (Railway):
+- `VITE_API_BASE_URL` - https://api.insight2dynasty.com
+  - **Important**: Variable name must be `VITE_API_BASE_URL` (not `VITE_API_URL`)
+  - This matches the name in `frontend/src/services/api.ts`
+
 ## Project Structure
 
 ```
@@ -245,10 +272,72 @@ git pull origin main
 - When modifying an API response shape, update `test_*_response_has_all_fields` tests to include new fields
 
 ## Deployment
-- TBD - Focus on local development first
-- Backend: Needs Python 3.11+ environment
-- Frontend: Static build via `npm run build`
-- Database: MySQL 8.0+ required
+
+### Production Deployment (Railway)
+✅ **Live at**: www.insight2dynasty.com
+
+**Platform**: Railway
+**Architecture**:
+- Frontend: Static React app (www.insight2dynasty.com)
+- Backend: FastAPI service (api.insight2dynasty.com)
+- Database: Railway MySQL 8.0
+
+**Deployment Process**:
+1. Push to `main` branch
+2. GitHub Actions runs tests (backend pytest, frontend build)
+3. Railway auto-deploys both frontend and backend
+4. Migrations run automatically via start command: `alembic upgrade head && uvicorn...`
+
+**Custom Domain Setup**:
+- Use CNAME records for subdomains (www, api)
+- GoDaddy does not support CNAME for apex domain (@)
+- Set up domain forwarding: `insight2dynasty.com` → `www.insight2dynasty.com`
+
+**Automated Data Sync**:
+- GitHub Actions workflow runs daily at 6 AM UTC
+- Calls `/api/cron/sync` endpoint with Bearer token authentication
+- Updates current season data automatically
+
+**Configuration Files**:
+- `railway.toml` - Railway deployment configuration
+- `nixpacks.toml` - Nixpacks build configuration (sets working directory to backend)
+- `.github/workflows/deploy.yml` - CI tests
+- `.github/workflows/scheduled-sync.yml` - Daily automated sync
+
+**Important Notes**:
+- Database migrations run as part of the start command (no separate migration step needed)
+- Frontend env var must be `VITE_API_BASE_URL` (not `VITE_API_URL`)
+- Backend requires `cryptography` package for MySQL 8.0 authentication
+- Sync order matters: players must be synced before drafts (foreign key constraint)
+
+For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+### Common Deployment Issues
+
+**1. Frontend Calling Wrong API**
+- **Symptom**: Frontend shows empty data or "Standings -" with no season
+- **Cause**: `VITE_API_BASE_URL` pointing to wrong domain
+- **Fix**: Ensure `VITE_API_BASE_URL=https://api.insight2dynasty.com` in Railway frontend service
+
+**2. CORS Errors**
+- **Symptom**: Browser console shows CORS policy errors
+- **Cause**: Backend `CORS_ORIGINS` doesn't include frontend domain
+- **Fix**: Update backend `CORS_ORIGINS=https://www.insight2dynasty.com,http://localhost:5173`
+
+**3. Undefined Filter Error**
+- **Symptom**: `TypeError: Cannot read properties of undefined (reading 'filter')`
+- **Cause**: Missing optional chaining when API data is loading
+- **Fix**: Use `standings?.standings?.filter(...)` instead of `standings?.standings.filter(...)`
+
+**4. Foreign Key Constraint During Sync**
+- **Symptom**: `IntegrityError` when syncing draft picks
+- **Cause**: Drafts synced before players exist
+- **Fix**: Already fixed - players are now synced first in `sync_all_history()`
+
+**5. MySQL Authentication Error**
+- **Symptom**: `RuntimeError: 'cryptography' package is required`
+- **Cause**: Missing cryptography package for MySQL 8.0 auth
+- **Fix**: Already in requirements.txt - ensure Railway installed it
 
 ## Resources
 - [Sleeper API Docs](https://docs.sleeper.com/)
