@@ -16,11 +16,13 @@ class Matchup(Base):
     # Home team (roster 1)
     home_roster_id = Column(Integer, ForeignKey("rosters.id"), nullable=False)
     home_points = Column(Float, default=0.0)
+    home_max_potential_points = Column(Float)  # Optimal lineup points
     home_starters = Column(String(500))  # JSON string of starter IDs
 
     # Away team (roster 2)
     away_roster_id = Column(Integer, ForeignKey("rosters.id"), nullable=False)
     away_points = Column(Float, default=0.0)
+    away_max_potential_points = Column(Float)  # Optimal lineup points
     away_starters = Column(String(500))  # JSON string of starter IDs
 
     # Result

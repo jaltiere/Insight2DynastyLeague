@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 
 type RecordCategory = 'regular_season' | 'playoff' | 'consolation';
-type SortField = 'name' | 'seasons' | 'wins' | 'losses' | 'ties' | 'win_pct' | 'pf' | 'pa';
+type SortField = 'name' | 'seasons' | 'wins' | 'losses' | 'ties' | 'win_pct' | 'pf' | 'pa' | 'max_potential' | 'pts_left_bench';
 type SortDirection = 'asc' | 'desc';
 
 interface CategoryRecord {
@@ -13,6 +13,8 @@ interface CategoryRecord {
   points_for: number;
   points_against: number;
   win_percentage: number;
+  max_potential_points?: number;
+  points_left_on_bench?: number;
 }
 
 interface Trophies {
@@ -154,6 +156,14 @@ export default function Owners() {
           valA = catA.points_against;
           valB = catB.points_against;
           break;
+        case 'max_potential':
+          valA = catA.max_potential_points || 0;
+          valB = catB.max_potential_points || 0;
+          break;
+        case 'pts_left_bench':
+          valA = catA.points_left_on_bench || 0;
+          valB = catB.points_left_on_bench || 0;
+          break;
         default:
           valA = catA.wins;
           valB = catB.wins;
@@ -247,6 +257,16 @@ export default function Owners() {
                 <th className={`${thClass} text-right`} onClick={() => handleSort('pa')}>
                   PA<SortArrow field="pa" sortField={sortField} sortDir={sortDir} />
                 </th>
+                {activeCategory === 'regular_season' && (
+                  <>
+                    <th className={`${thClass} text-right`} onClick={() => handleSort('max_potential')}>
+                      Max Potential<SortArrow field="max_potential" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`${thClass} text-right`} onClick={() => handleSort('pts_left_bench')}>
+                      Pts Left on Bench<SortArrow field="pts_left_bench" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                  </>
+                )}
                 <th className={`${thClass} text-center`}>
                   Trophies
                 </th>
@@ -279,6 +299,16 @@ export default function Owners() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_for.toFixed(2)}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_against.toFixed(2)}</td>
+                    {activeCategory === 'regular_season' && (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                          {rec.max_potential_points?.toFixed(2) || '0.00'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                          {rec.points_left_on_bench?.toFixed(2) || '0.00'}
+                        </td>
+                      </>
+                    )}
                     <td className="px-4 py-3 text-sm text-gray-900 text-center whitespace-nowrap">
                       <TrophyDisplay trophies={owner.trophies} />
                     </td>
@@ -333,6 +363,12 @@ export default function Owners() {
                     )}
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PF</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PA</th>
+                    {activeCategory === 'regular_season' && (
+                      <>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Max Potential</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pts Left on Bench</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -356,6 +392,16 @@ export default function Owners() {
                         )}
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_for.toFixed(2)}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.points_against.toFixed(2)}</td>
+                        {activeCategory === 'regular_season' && (
+                          <>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                              {rec.max_potential_points?.toFixed(2) || '0.00'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                              {rec.points_left_on_bench?.toFixed(2) || '0.00'}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}

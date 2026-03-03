@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.services.sleeper_client import sleeper_client
+from app.services.lineup_optimizer import LineupOptimizer
 from app.models import (
     League, User, Season, Roster, Matchup, Player, Transaction, Draft, DraftPick,
     SeasonAward, MatchupPlayerPoint
@@ -484,6 +485,9 @@ class SyncService:
             await self._sync_player_points(matchup, roster1, team1)
             await self._sync_player_points(matchup, roster2, team2)
 
+            # Calculate max potential points for both teams
+            await self._calculate_max_potential(matchup, roster1, roster2, season_id)
+
     async def _get_roster_by_roster_id(self, season_id: int, roster_id: int):
         """Get roster by season and roster_id."""
         result = await self.db.execute(
@@ -525,6 +529,62 @@ class SyncService:
                     points=points or 0.0,
                     is_starter=str(player_id) in starters,
                 ))
+
+    async def _calculate_max_potential(self, matchup: Matchup, home_roster: Roster,
+                                        away_roster: Roster, season_id: int):
+        """Calculate max potential points for both teams in a matchup."""
+        # Get league roster positions
+        result = await self.db.execute(
+            select(Season).where(Season.id == season_id)
+        )
+        season = result.scalar_one_or_none()
+        if not season:
+            return
+
+        result = await self.db.execute(
+            select(League).where(League.id == season.league_id)
+        )
+        league = result.scalar_one_or_none()
+        if not league or not league.roster_positions:
+            return
+
+        optimizer = LineupOptimizer(league.roster_positions)
+
+        # Calculate max potential for home team
+        home_max = await self._get_roster_max_potential(matchup, home_roster, optimizer)
+        matchup.home_max_potential_points = home_max
+
+        # Calculate max potential for away team
+        away_max = await self._get_roster_max_potential(matchup, away_roster, optimizer)
+        matchup.away_max_potential_points = away_max
+
+    async def _get_roster_max_potential(self, matchup: Matchup, roster: Roster,
+                                         optimizer: LineupOptimizer) -> float:
+        """Get max potential points for a single roster in a matchup."""
+        # Get all player points for this roster in this matchup
+        result = await self.db.execute(
+            select(MatchupPlayerPoint, Player)
+            .outerjoin(Player, MatchupPlayerPoint.player_id == Player.id)
+            .where(
+                MatchupPlayerPoint.matchup_id == matchup.id,
+                MatchupPlayerPoint.roster_id == roster.id
+            )
+        )
+        player_data = result.all()
+
+        # Build list of player points with positions
+        player_points = []
+        for mpp, player in player_data:
+            # Use player position if available, otherwise skip this player
+            position = player.position if player else None
+            if position:
+                player_points.append({
+                    "player_id": mpp.player_id,
+                    "position": position,
+                    "points": mpp.points
+                })
+
+        return optimizer.calculate_optimal_lineup(player_points)
 
     async def _sync_drafts(self, drafts_data: List[Dict[str, Any]], year: int):
         """Sync draft data."""
