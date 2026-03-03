@@ -2,6 +2,10 @@
 
 A modern fantasy football dynasty league website integrating with the Sleeper platform.
 
+🌐 **Live Site**: [www.insight2dynasty.com](https://www.insight2dynasty.com)
+📊 **API**: [api.insight2dynasty.com](https://api.insight2dynasty.com)
+📚 **API Docs**: [api.insight2dynasty.com/docs](https://api.insight2dynasty.com/docs)
+
 ## Features
 
 - **Current Standings** - Real-time league standings and playoff brackets
@@ -24,6 +28,16 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 - SQLAlchemy 2.0
 - MySQL 8.0+
 - Alembic (migrations)
+
+### Hosting & Deployment
+- **Platform**: Railway (www.railway.app)
+- **Frontend**: Static React app on Railway
+- **Backend**: FastAPI service on Railway
+- **Database**: Railway MySQL 8.0
+- **CI/CD**: GitHub Actions for testing, Railway for deployment
+- **Domain**: Custom domain via GoDaddy
+
+📖 **For deployment instructions**, see [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ## Getting Started
 
@@ -159,17 +173,26 @@ Always run `alembic upgrade head` after pulling new code that includes migration
 
 ## Data Sync from Sleeper
 
-The app syncs data from the Sleeper API into the local MySQL database. The backend server must be running for all sync commands.
+The app syncs data from the Sleeper API into the MySQL database.
+
+**Note:** In production, syncs run automatically daily at 6 AM UTC via GitHub Actions. Manual syncs can be triggered as needed.
 
 ### Weekly Sync (During the Season)
 
 Run this once per week after games are completed to update matchup results, rosters, transactions, and standings:
 
+**Local development:**
 ```bash
 curl -X POST http://localhost:8000/api/sync/league
 ```
 
-Or visit http://localhost:8000/docs and use the interactive Swagger UI to trigger the `/api/sync/league` endpoint.
+**Production:**
+```bash
+curl -X POST https://api.insight2dynasty.com/api/cron/sync \
+  -H "Authorization: Bearer YOUR_CRON_SECRET"
+```
+
+Or visit http://localhost:8000/docs (local) or https://api.insight2dynasty.com/docs (production) and use the interactive Swagger UI.
 
 **What it syncs:**
 - League configuration and settings
@@ -201,9 +224,17 @@ When the Sleeper league rolls over to a new season (typically after the NFL draf
    Then restart the backend server and re-run the sync.
 
 3. **Sync full history** to backfill any gaps or to re-sync all historical seasons:
+
+   **Local:**
    ```bash
    curl -X POST http://localhost:8000/api/sync/history
    ```
+
+   **Production:**
+   ```bash
+   curl -X POST https://api.insight2dynasty.com/api/sync/history
+   ```
+
    This walks the `previous_league_id` chain from the current league all the way back to the first season and syncs every season.
 
 4. **Run any new database migrations** in case schema changes were made for the new season:
@@ -216,6 +247,7 @@ When the Sleeper league rolls over to a new season (typically after the NFL draf
 
 After initial installation, run both syncs to populate all data:
 
+**Local development:**
 ```bash
 # Sync current season
 curl -X POST http://localhost:8000/api/sync/league
@@ -223,6 +255,31 @@ curl -X POST http://localhost:8000/api/sync/league
 # Sync all historical seasons
 curl -X POST http://localhost:8000/api/sync/history
 ```
+
+**Production (after Railway deployment):**
+```bash
+# Sync all historical seasons (includes current season)
+curl -X POST https://api.insight2dynasty.com/api/sync/history
+```
+
+## Deployment
+
+The application is deployed to Railway with:
+- **Frontend**: Static React app at www.insight2dynasty.com
+- **Backend**: FastAPI service at api.insight2dynasty.com
+- **Database**: Railway MySQL 8.0
+- **Automated Sync**: GitHub Actions runs daily at 6 AM UTC
+
+For complete deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+### Quick Deployment Checklist
+
+- ✅ Railway services created (Backend, Frontend, MySQL)
+- ✅ Custom domains configured (api.insight2dynasty.com, www.insight2dynasty.com)
+- ✅ Environment variables set in Railway
+- ✅ GitHub Actions secrets configured
+- ✅ Initial data sync completed
+- ✅ Daily automated sync enabled
 
 ## Development
 

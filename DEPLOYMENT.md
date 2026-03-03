@@ -2,6 +2,36 @@
 
 This guide walks you through deploying the Insight2Dynasty League application to production using Railway.
 
+## Live Deployment Status
+
+✅ **Currently Deployed and Running**
+
+- **Frontend**: https://www.insight2dynasty.com
+- **Backend API**: https://api.insight2dynasty.com
+- **API Docs**: https://api.insight2dynasty.com/docs
+- **Platform**: Railway
+- **Database**: Railway MySQL 8.0
+- **Auto-sync**: GitHub Actions (daily at 6 AM UTC)
+
+## Live Configuration
+
+**Domain Setup:**
+- Frontend: `www.insight2dynasty.com` (CNAME → Railway frontend service)
+- Backend: `api.insight2dynasty.com` (CNAME → Railway backend service)
+
+**Environment Variables (Backend):**
+- `DATABASE_URL` - Auto-populated by Railway MySQL plugin
+- `SLEEPER_LEAGUE_ID` - 1313933992642220032
+- `CORS_ORIGINS` - https://www.insight2dynasty.com,http://localhost:5173
+- `CRON_SECRET` - Secure random string for scheduled sync
+- `DEBUG` - False
+- `APP_VERSION` - 1.0.0
+
+**Environment Variables (Frontend):**
+- `VITE_API_BASE_URL` - https://api.insight2dynasty.com
+
+---
+
 ## Prerequisites
 
 - GitHub account (for CI/CD)
@@ -69,8 +99,10 @@ This guide walks you through deploying the Insight2Dynasty League application to
 
 4. Add environment variable:
    ```
-   VITE_API_URL=https://your-backend-url.railway.app
+   VITE_API_BASE_URL=https://api.insight2dynasty.com
    ```
+
+   ⚠️ **Important**: The variable name is `VITE_API_BASE_URL` (not `VITE_API_URL`). This must match the name used in `frontend/src/services/api.ts`.
 
 5. Install serve package for static hosting:
    ```bash
@@ -260,6 +292,65 @@ curl -X POST https://your-backend.railway.app/api/cron/sync \
 4. Merge to `main` after review
 5. GitHub Actions runs tests
 6. Railway auto-deploys if tests pass
+
+---
+
+## Known Issues and Solutions
+
+### Issue 1: Missing `cryptography` Package
+
+**Error:** `RuntimeError: 'cryptography' package is required for sha256_password or caching_sha2_password auth methods`
+
+**Solution:** The `cryptography` package is required for MySQL 8.0 authentication. It's already included in `backend/requirements.txt`:
+```
+cryptography>=42.0.0
+```
+
+### Issue 2: Foreign Key Constraint Error During Sync
+
+**Error:** `IntegrityError: Cannot add or update a child row: a foreign key constraint fails (draft_picks.player_id references players.id)`
+
+**Solution:** This was fixed by reordering the sync process to populate players BEFORE drafts. The fix is already implemented in `backend/app/services/sync_service.py` - players are now synced first.
+
+### Issue 3: Frontend `.filter()` Error
+
+**Error:** `TypeError: Cannot read properties of undefined (reading 'filter')`
+
+**Solution:** Fixed in `frontend/src/pages/Home.tsx` by adding optional chaining:
+```typescript
+teams: standings?.standings?.filter(...) || []
+```
+
+### Issue 4: CORS Errors
+
+**Symptom:** Frontend can't access backend API
+
+**Solution:** Ensure backend `CORS_ORIGINS` includes your frontend domain:
+```
+CORS_ORIGINS=https://www.insight2dynasty.com,http://localhost:5173
+```
+
+And frontend `VITE_API_BASE_URL` points to backend:
+```
+VITE_API_BASE_URL=https://api.insight2dynasty.com
+```
+
+### Issue 5: GoDaddy CNAME for Root Domain
+
+**Problem:** GoDaddy won't allow CNAME record with name `@` (root domain)
+
+**Solution:** Use subdomains with CNAME:
+```
+Type: CNAME
+Name: www
+Value: <frontend-service>.up.railway.app.
+
+Type: CNAME
+Name: api
+Value: <backend-service>.up.railway.app.
+```
+
+Then set up domain forwarding: `insight2dynasty.com` → `www.insight2dynasty.com`
 
 ---
 
