@@ -66,6 +66,9 @@ async def _get_season_standings(db: AsyncSession, year: int) -> Dict[str, Any]:
     # Calculate median records from regular season matchups
     median_records = await _calculate_median_records(db, season.id)
 
+    # Calculate max potential points for regular season
+    max_potential_stats = await _calculate_max_potential_stats(db, season.id)
+
     # Build roster DB id -> roster_id mapping for median lookup
     roster_db_id_map = {roster.id: roster.roster_id for roster, _ in rosters_with_users}
 
@@ -73,6 +76,8 @@ async def _get_season_standings(db: AsyncSession, year: int) -> Dict[str, Any]:
     standings = []
     for roster, user in rosters_with_users:
         median = median_records.get(roster.id, {"wins": 0, "losses": 0, "ties": 0})
+        max_potential = max_potential_stats.get(roster.id, {"max_potential": 0.0, "points_left_on_bench": 0.0})
+
         standings.append({
             "roster_id": roster.roster_id,
             "user_id": user.id,
@@ -89,6 +94,8 @@ async def _get_season_standings(db: AsyncSession, year: int) -> Dict[str, Any]:
             "median_wins": median["wins"],
             "median_losses": median["losses"],
             "median_ties": median["ties"],
+            "max_potential_points": max_potential["max_potential"],
+            "points_left_on_bench": max_potential["points_left_on_bench"],
         })
 
     return {
@@ -137,3 +144,46 @@ async def _calculate_median_records(db: AsyncSession, season_id: int) -> Dict[in
                 median_records[roster_id]["ties"] += 1
 
     return dict(median_records)
+
+
+async def _calculate_max_potential_stats(db: AsyncSession, season_id: int) -> Dict[int, Dict[str, float]]:
+    """Calculate max potential points and points left on bench for regular season only."""
+    result = await db.execute(
+        select(Matchup).where(
+            Matchup.season_id == season_id,
+            Matchup.match_type == "regular"
+        )
+    )
+    matchups = result.scalars().all()
+
+    if not matchups:
+        return {}
+
+    # Accumulate max potential and actual points per roster
+    roster_stats: Dict[int, Dict[str, float]] = defaultdict(
+        lambda: {"max_potential": 0.0, "actual_points": 0.0}
+    )
+
+    for m in matchups:
+        # Home team
+        if m.home_max_potential_points is not None:
+            roster_stats[m.home_roster_id]["max_potential"] += m.home_max_potential_points
+            roster_stats[m.home_roster_id]["actual_points"] += (m.home_points or 0)
+
+        # Away team
+        if m.away_max_potential_points is not None:
+            roster_stats[m.away_roster_id]["max_potential"] += m.away_max_potential_points
+            roster_stats[m.away_roster_id]["actual_points"] += (m.away_points or 0)
+
+    # Calculate points left on bench
+    result_dict = {}
+    for roster_id, stats in roster_stats.items():
+        max_pot = round(stats["max_potential"], 2)
+        actual = round(stats["actual_points"], 2)
+        points_left = round(max_pot - actual, 2)
+        result_dict[roster_id] = {
+            "max_potential": max_pot,
+            "points_left_on_bench": points_left
+        }
+
+    return result_dict

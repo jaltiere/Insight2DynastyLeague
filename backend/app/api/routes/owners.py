@@ -128,7 +128,7 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
     matchups = result.scalars().all()
 
     categories = {
-        "regular": {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0},
+        "regular": {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0, "max_potential_points": 0.0},
         "playoff": {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0},
         "consolation": {"wins": 0, "losses": 0, "ties": 0, "points_for": 0.0, "points_against": 0.0},
     }
@@ -145,6 +145,12 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
         categories[cat]["points_for"] += my_points or 0.0
         categories[cat]["points_against"] += opp_points or 0.0
 
+        # Add max potential for regular season only
+        if cat == "regular":
+            my_max_potential = m.home_max_potential_points if is_home else m.away_max_potential_points
+            if my_max_potential is not None:
+                categories[cat]["max_potential_points"] += my_max_potential
+
         if m.winner_roster_id is None:
             categories[cat]["ties"] += 1
         elif m.winner_roster_id in roster_ids:
@@ -152,12 +158,17 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
         else:
             categories[cat]["losses"] += 1
 
-    # Add win_percentage to each category
-    for cat in categories.values():
+    # Add win_percentage and points_left_on_bench to each category
+    for cat_name, cat in categories.items():
         total = cat["wins"] + cat["losses"] + cat["ties"]
         cat["win_percentage"] = round(cat["wins"] / max(total, 1), 3)
         cat["points_for"] = round(cat["points_for"], 2)
         cat["points_against"] = round(cat["points_against"], 2)
+
+        # Calculate points left on bench for regular season
+        if cat_name == "regular" and "max_potential_points" in cat:
+            cat["max_potential_points"] = round(cat["max_potential_points"], 2)
+            cat["points_left_on_bench"] = round(cat["max_potential_points"] - cat["points_for"], 2)
 
     return categories
 

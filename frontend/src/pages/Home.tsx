@@ -51,6 +51,8 @@ function DivisionTable({
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">vs Median</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PF</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PA</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Max Potential</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pts Left on Bench</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -69,6 +71,8 @@ function DivisionTable({
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 text-right">{team.points_for.toFixed(2)}</td>
                 <td className="px-4 py-3 text-sm text-gray-900 text-right">{team.points_against.toFixed(2)}</td>
+                <td className="px-4 py-3 text-sm text-gray-900 text-right">{team.max_potential_points?.toFixed(2) || '0.00'}</td>
+                <td className="px-4 py-3 text-sm text-gray-900 text-right">{team.points_left_on_bench?.toFixed(2) || '0.00'}</td>
               </tr>
             ))}
           </tbody>
