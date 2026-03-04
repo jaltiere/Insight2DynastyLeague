@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import DraftCountdownBanner from '../components/DraftCountdownBanner';
 
 const POSITION_COLORS: Record<string, string> = {
   QB: 'bg-pink-500',
@@ -268,6 +269,7 @@ export default function Home() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-4xl font-bold">Standings - {standings?.season}</h1>
+        {selectedSeason === null && <DraftCountdownBanner />}
         {seasonsData?.seasons?.length > 0 && (
           <select
             className="border border-gray-300 rounded-lg px-4 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

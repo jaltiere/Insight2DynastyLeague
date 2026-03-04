@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
-from app.models import Draft, DraftPick, Player, Roster, User
+from app.models import Draft, DraftPick, Player, Roster, Season, User
 from collections import Counter
 from typing import List, Dict, Any
 
@@ -24,12 +24,61 @@ async def get_all_drafts(db: AsyncSession = Depends(get_db)):
             "year": draft.year,
             "type": draft.type,
             "status": draft.status,
-            "rounds": draft.rounds
+            "rounds": draft.rounds,
+            "start_time": draft.start_time.isoformat() if draft.start_time else None
         })
 
     return {
         "total_drafts": len(draft_list),
         "drafts": draft_list
+    }
+
+
+@router.get("/drafts/current")
+async def get_current_draft(db: AsyncSession = Depends(get_db)):
+    """Get the most recent season's draft status for countdown display."""
+    result = await db.execute(
+        select(Draft).order_by(desc(Draft.year)).limit(1)
+    )
+    draft = result.scalar_one_or_none()
+
+    if not draft:
+        return None
+
+    # Resolve draft order to owner names
+    draft_order_list = []
+    raw_order = draft.draft_order or {}
+    if raw_order:
+        roster_ids = [rid for rid in raw_order.values() if rid]
+        roster_to_owner = {}
+        if roster_ids:
+            result = await db.execute(
+                select(Roster, User)
+                .join(User, Roster.user_id == User.id)
+                .join(Season, Roster.season_id == Season.id)
+                .where(Roster.roster_id.in_(roster_ids), Season.year == draft.year)
+            )
+            for roster, user in result.all():
+                roster_to_owner[roster.roster_id] = {
+                    "display_name": roster.team_name or user.display_name or user.username,
+                    "avatar": user.avatar,
+                }
+
+        for slot in sorted(raw_order.keys(), key=lambda s: int(s)):
+            roster_id = raw_order[slot]
+            owner = roster_to_owner.get(roster_id)
+            draft_order_list.append({
+                "slot": int(slot),
+                "display_name": owner["display_name"] if owner else f"Team {slot}",
+                "avatar": owner["avatar"] if owner else None,
+            })
+
+    return {
+        "draft_id": draft.id,
+        "year": draft.year,
+        "status": draft.status,
+        "start_time": draft.start_time.isoformat() if draft.start_time else None,
+        "draft_order": draft_order_list
     }
 
 

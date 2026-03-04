@@ -36,6 +36,7 @@ export const api = {
   // Drafts
   getAllDrafts: () => apiClient.get('/drafts').then(res => res.data),
   getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`).then(res => res.data),
+  getCurrentDraft: () => apiClient.get('/drafts/current').then(res => res.data),
 
   // League History
   getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
