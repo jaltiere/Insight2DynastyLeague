@@ -18,6 +18,7 @@ export default function Layout() {
     { to: '/trade-grades', label: 'Trade Grades' },
     { to: '/draft-rankings', label: 'Draft Rankings' },
     { to: '/league-history', label: 'History' },
+    { to: '/playoffs', label: 'Playoffs' },
   ];
 
   const closeMobileMenu = () => setMobileMenuOpen(false);

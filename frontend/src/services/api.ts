@@ -88,6 +88,10 @@ export const api = {
   getDraftGrade: (draftId: string) =>
     apiClient.get(`/draft-grades/${draftId}`).then(res => res.data),
 
+  // Playoffs
+  getPlayoffOdds: (season?: number) =>
+    apiClient.get(season ? `/playoffs/${season}` : '/playoffs').then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

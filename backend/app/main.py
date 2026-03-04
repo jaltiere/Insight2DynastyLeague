@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.api.routes import standings, players, owners, matchups, drafts, league_history, sync, player_records, rookie_records, taxi_squads, seasons, transactions, trade_grades, draft_grades
+from app.api.routes import standings, players, owners, matchups, drafts, league_history, sync, player_records, rookie_records, taxi_squads, seasons, transactions, trade_grades, draft_grades, playoffs
 
 settings = get_settings()
 
@@ -35,6 +35,7 @@ app.include_router(seasons.router, prefix="/api", tags=["Seasons"])
 app.include_router(transactions.router, prefix="/api", tags=["Transactions"])
 app.include_router(trade_grades.router, prefix="/api", tags=["Trade Grades"])
 app.include_router(draft_grades.router, prefix="/api", tags=["Draft Grades"])
+app.include_router(playoffs.router, prefix="/api", tags=["Playoffs"])
 
 
 @app.get("/")
