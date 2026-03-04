@@ -24,7 +24,7 @@ export default function Layout() {
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50">
       <nav className="bg-blue-600 dark:bg-blue-800 text-white shadow-lg">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
