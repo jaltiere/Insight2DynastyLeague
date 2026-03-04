@@ -1,3 +1,4 @@
+from datetime import datetime
 from tests.conftest import (
     create_league, create_season, create_user, create_roster,
     create_draft, create_draft_pick, create_player,
@@ -116,3 +117,90 @@ async def test_draft_pick_without_roster_user(client, db_session):
     pick = response.json()["picks"][0]
     assert "owner_user_id" not in pick
     assert "owner_display_name" not in pick
+
+
+async def test_get_current_draft_returns_latest(client, db_session):
+    league = await create_league(db_session)
+    s2023 = await create_season(db_session, league, year=2023)
+    s2024 = await create_season(db_session, league, year=2024)
+    await create_draft(db_session, s2023, id="d2023", year=2023, status="complete")
+    await create_draft(
+        db_session, s2024, id="d2024", year=2024, status="pre_draft",
+        start_time=datetime(2024, 8, 25, 19, 0, 0)
+    )
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["year"] == 2024
+    assert data["status"] == "pre_draft"
+    assert data["start_time"] == "2024-08-25T19:00:00"
+
+
+async def test_get_current_draft_no_start_time(client, db_session):
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    await create_draft(db_session, season, id="d2025", year=2025, status="pre_draft")
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["year"] == 2025
+    assert data["status"] == "pre_draft"
+    assert data["start_time"] is None
+
+
+async def test_get_current_draft_empty(client):
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+async def test_get_all_drafts_includes_start_time(client, db_session):
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    await create_draft(
+        db_session, season, id="d2024", year=2024,
+        start_time=datetime(2024, 8, 25, 19, 0, 0)
+    )
+
+    response = await client.get("/api/drafts")
+    assert response.status_code == 200
+    draft = response.json()["drafts"][0]
+    assert draft["start_time"] == "2024-08-25T19:00:00"
+
+
+async def test_get_current_draft_with_draft_order(client, db_session):
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
+    u2 = await create_user(db_session, id="u2", display_name="Bob", avatar="av2")
+    await create_roster(db_session, season, u1, roster_id=1, team_name="Team Alpha")
+    await create_roster(db_session, season, u2, roster_id=2, team_name=None)
+    await create_draft(
+        db_session, season, id="d2025", year=2025, status="pre_draft",
+        draft_order={"1": 2, "2": 1}
+    )
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    data = response.json()
+    order = data["draft_order"]
+    assert len(order) == 2
+    # Slot 1 → roster 2 → Bob
+    assert order[0]["slot"] == 1
+    assert order[0]["display_name"] == "Bob"
+    assert order[0]["avatar"] == "av2"
+    # Slot 2 → roster 1 → Team Alpha (team_name takes priority)
+    assert order[1]["slot"] == 2
+    assert order[1]["display_name"] == "Team Alpha"
+
+
+async def test_get_current_draft_empty_draft_order(client, db_session):
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    await create_draft(db_session, season, id="d2025", year=2025, status="pre_draft")
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    assert response.json()["draft_order"] == []

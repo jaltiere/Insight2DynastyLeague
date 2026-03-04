@@ -7,6 +7,7 @@ from app.models import (
     SeasonAward, MatchupPlayerPoint
 )
 from typing import Dict, Any, List
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -603,6 +604,10 @@ class SyncService:
             draft_detail = await self.client.get_draft(draft_id)
             slot_to_roster = draft_detail.get("slot_to_roster_id") or draft_data.get("draft_order") or {}
 
+            # Extract start_time (Sleeper returns ms epoch)
+            raw_start = draft_data.get("start_time") or draft_detail.get("start_time")
+            start_time = datetime.utcfromtimestamp(raw_start / 1000) if raw_start else None
+
             result = await self.db.execute(
                 select(Draft).where(Draft.id == draft_id)
             )
@@ -612,6 +617,7 @@ class SyncService:
                 draft.status = draft_data.get("status")
                 draft.settings = draft_data.get("settings", {})
                 draft.draft_order = slot_to_roster
+                draft.start_time = start_time
             else:
                 draft = Draft(
                     id=draft_id,
@@ -621,7 +627,8 @@ class SyncService:
                     status=draft_data.get("status"),
                     rounds=draft_data.get("settings", {}).get("rounds"),
                     settings=draft_data.get("settings", {}),
-                    draft_order=slot_to_roster
+                    draft_order=slot_to_roster,
+                    start_time=start_time
                 )
                 self.db.add(draft)
 
