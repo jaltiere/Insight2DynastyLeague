@@ -22,6 +22,7 @@ interface Trophies {
   division_winner: number;
   most_points: number;
   consolation: number;
+  bench_points: number;
 }
 
 interface Owner {
@@ -56,13 +57,14 @@ const categories: { key: RecordCategory; label: string }[] = [
 ];
 
 const TROPHY_ICONS = {
-  champion: { icon: '\uD83C\uDFC6', label: 'League Champion' },
-  division_winner: { icon: '\uD83C\uDFC5', label: 'Division Winner' },
-  most_points: { icon: '\uD83C\uDF96\uFE0F', label: 'Most Points (Regular Season)' },
-  consolation: { icon: '\uD83E\uDD49', label: 'Consolation Winner' },
+  champion: { icon: '🏆', label: 'League Champion' },
+  division_winner: { icon: '🏅', label: 'Division Winner' },
+  most_points: { icon: '🔥', label: 'Most Points (Regular Season)' },
+  consolation: { icon: '⭐', label: 'Consolation Winner' },
+  bench_points: { icon: '🤡', label: 'Most Points Left on Bench' },
 };
 
-const EMPTY_TROPHIES: Trophies = { champion: 0, division_winner: 0, most_points: 0, consolation: 0 };
+const EMPTY_TROPHIES: Trophies = { champion: 0, division_winner: 0, most_points: 0, consolation: 0, bench_points: 0 };
 
 function TrophyDisplay({ trophies }: { trophies: Trophies }) {
   const t = trophies || EMPTY_TROPHIES;

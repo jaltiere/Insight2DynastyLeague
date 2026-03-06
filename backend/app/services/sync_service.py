@@ -822,6 +822,42 @@ class SyncService:
                         points_for=top_scorer.points_for,
                     ))
 
+        # --- Most points left on bench (regular season only) ---
+        # Calculate total points_left_on_bench for each roster
+        result = await self.db.execute(
+            select(Matchup).where(
+                Matchup.season_id == season.id,
+                Matchup.match_type == "regular"
+            )
+        )
+        matchups = result.scalars().all()
+
+        bench_points_by_roster: Dict[int, float] = {}
+        for m in matchups:
+            # Home roster
+            if m.home_roster_id and m.home_max_potential_points is not None and m.home_points is not None:
+                bench_left = m.home_max_potential_points - m.home_points
+                bench_points_by_roster[m.home_roster_id] = bench_points_by_roster.get(m.home_roster_id, 0.0) + bench_left
+
+            # Away roster
+            if m.away_roster_id and m.away_max_potential_points is not None and m.away_points is not None:
+                bench_left = m.away_max_potential_points - m.away_points
+                bench_points_by_roster[m.away_roster_id] = bench_points_by_roster.get(m.away_roster_id, 0.0) + bench_left
+
+        if bench_points_by_roster:
+            # Find the roster with the most points left on bench
+            worst_manager_roster_id = max(bench_points_by_roster, key=bench_points_by_roster.get)
+            worst_manager_roster = next((r for r in rosters if r.roster_id == worst_manager_roster_id), None)
+
+            if worst_manager_roster and worst_manager_roster.user_id:
+                self.db.add(SeasonAward(
+                    season_id=season.id,
+                    user_id=worst_manager_roster.user_id,
+                    award_type="bench_points",
+                    roster_id=worst_manager_roster_id,
+                    points_for=int(bench_points_by_roster[worst_manager_roster_id]),  # Total points left on bench
+                ))
+
         logger.info(f"Synced season awards for {year}")
 
     async def _sync_transactions(self, league_id: str, year: int, through_week: int):
