@@ -846,16 +846,16 @@ class SyncService:
 
         if bench_points_by_roster:
             # Find the roster with the most points left on bench
-            worst_manager_roster_id = max(bench_points_by_roster, key=bench_points_by_roster.get)
-            worst_manager_roster = next((r for r in rosters if r.roster_id == worst_manager_roster_id), None)
+            worst_manager_roster_db_id = max(bench_points_by_roster, key=bench_points_by_roster.get)
+            worst_manager_roster = next((r for r in rosters if r.id == worst_manager_roster_db_id), None)
 
             if worst_manager_roster and worst_manager_roster.user_id:
                 self.db.add(SeasonAward(
                     season_id=season.id,
                     user_id=worst_manager_roster.user_id,
                     award_type="bench_points",
-                    roster_id=worst_manager_roster_id,
-                    points_for=int(bench_points_by_roster[worst_manager_roster_id]),  # Total points left on bench
+                    roster_id=worst_manager_roster.roster_id,  # Sleeper roster ID
+                    points_for=int(bench_points_by_roster[worst_manager_roster_db_id]),  # Total points left on bench
                 ))
 
         logger.info(f"Synced season awards for {year}")
