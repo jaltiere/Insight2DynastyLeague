@@ -174,13 +174,13 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
 
 
 async def _count_trophies(db: AsyncSession, user_id: str) -> Dict[str, int]:
-    """Count trophy awards for an owner: champion, division_winner, most_points."""
+    """Count trophy awards for an owner: champion, division_winner, most_points, consolation, bench_points."""
     result = await db.execute(
         select(SeasonAward).where(SeasonAward.user_id == user_id)
     )
     awards = result.scalars().all()
 
-    counts = {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0}
+    counts = {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0, "bench_points": 0}
     for award in awards:
         if award.award_type in counts:
             counts[award.award_type] += 1
