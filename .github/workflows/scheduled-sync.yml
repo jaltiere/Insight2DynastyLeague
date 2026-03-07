@@ -2,8 +2,9 @@ name: Scheduled Data Sync
 
 on:
   schedule:
-    # Run daily at 6 AM UTC (adjust to your timezone preference)
-    - cron: '0 6 * * *'
+    # Run daily at 10 AM EST (2 PM UTC / 14:00 UTC during EDT, 3 PM UTC / 15:00 UTC during EST)
+    # Using 14:00 UTC to match EDT (most of the year)
+    - cron: '0 14 * * *'
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
