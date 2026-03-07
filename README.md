@@ -9,6 +9,7 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 ## Features
 
 - **Current Standings** - Real-time league standings and playoff brackets
+- **Power Rankings** - Dynasty-focused rankings balancing current performance (40%), roster value/age (40%), and historical success (20%) - [Algorithm Details](./POWER_RANKINGS.md)
 - **Player Statistics** - Comprehensive searchable player database
 - **Head-to-Head History** - Owner vs owner matchup records
 - **Owner Records** - Historical performance and season breakdowns

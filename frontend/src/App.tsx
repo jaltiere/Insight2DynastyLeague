@@ -2,13 +2,13 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Home from './pages/Home';
-import Players from './pages/Players';
+import PowerRankings from './pages/PowerRankings';
+import Records from './pages/Records';
 import HeadToHead from './pages/HeadToHead';
 import Owners from './pages/Owners';
 import Drafts from './pages/Drafts';
 import LeagueHistory from './pages/LeagueHistory';
 import TaxiSquads from './pages/TaxiSquads';
-import RookieRecords from './pages/RookieRecords';
 import Transactions from './pages/Transactions';
 import TradeGrades from './pages/TradeGrades';
 import DraftRankings from './pages/DraftRankings';
@@ -31,9 +31,9 @@ function App() {
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Home />} />
+            <Route path="power-rankings" element={<PowerRankings />} />
             <Route path="taxi-squads" element={<TaxiSquads />} />
-            <Route path="players" element={<Players />} />
-            <Route path="rookie-records" element={<RookieRecords />} />
+            <Route path="records" element={<Records />} />
             <Route path="head-to-head" element={<HeadToHead />} />
             <Route path="owners" element={<Owners />} />
             <Route path="drafts" element={<Drafts />} />

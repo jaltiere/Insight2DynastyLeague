@@ -2,15 +2,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 
+type RecordType = 'player' | 'rookie';
 type View = 'game' | 'season' | 'career';
 type MatchType = 'regular' | 'playoff' | 'consolation';
 type RosterType = 'all' | 'starter' | 'bench';
-
-const views: { key: View; label: string }[] = [
-  { key: 'game', label: 'By Game' },
-  { key: 'season', label: 'By Season' },
-  { key: 'career', label: 'By Career' },
-];
 
 const matchTypes: { key: MatchType; label: string }[] = [
   { key: 'regular', label: 'Regular Season' },
@@ -66,36 +61,93 @@ interface CareerRecord {
   team_name: string | null;
 }
 
-export default function Players() {
+export default function Records() {
+  const [recordType, setRecordType] = useState<RecordType>('player');
   const [view, setView] = useState<View>('game');
   const [matchType, setMatchType] = useState<MatchType>('regular');
   const [rosterType, setRosterType] = useState<RosterType>('all');
   const [position, setPosition] = useState<string>('All');
 
+  // Reset view to 'game' if switching to rookie records (no career view for rookies)
+  const handleRecordTypeChange = (newType: RecordType) => {
+    setRecordType(newType);
+    if (newType === 'rookie' && view === 'career') {
+      setView('game');
+    }
+  };
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['playerRecords', view, matchType, rosterType, position],
+    queryKey: ['records', recordType, view, matchType, rosterType, position],
     queryFn: () =>
-      api.getPlayerRecords({
-        view,
-        match_type: matchType,
-        roster_type: rosterType,
-        position: position === 'All' ? undefined : position,
-        limit: 10,
-      }),
+      recordType === 'player'
+        ? api.getPlayerRecords({
+            view,
+            match_type: matchType,
+            roster_type: rosterType,
+            position: position === 'All' ? undefined : position,
+            limit: 10,
+          })
+        : api.getRookieRecords({
+            view: view as 'game' | 'season', // Rookie only has game and season
+            match_type: matchType,
+            roster_type: rosterType,
+            position: position === 'All' ? undefined : position,
+            limit: 10,
+          }),
   });
 
   const records = data?.records || [];
+
+  // Available views depend on record type
+  const views: { key: View; label: string }[] =
+    recordType === 'player'
+      ? [
+          { key: 'game', label: 'By Game' },
+          { key: 'season', label: 'By Season' },
+          { key: 'career', label: 'By Career' },
+        ]
+      : [
+          { key: 'game', label: 'By Game' },
+          { key: 'season', label: 'By Season' },
+        ];
 
   const thClass =
     'px-4 py-3 text-xs font-medium text-gray-500 uppercase select-none';
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-4xl font-bold mb-6">Player Records</h1>
+      <h1 className="text-4xl font-bold mb-6">Records</h1>
+
+      {/* Record Type Toggle */}
+      <div className="flex gap-4 mb-6">
+        <button
+          onClick={() => handleRecordTypeChange('player')}
+          className={`px-6 py-3 rounded-lg font-semibold transition ${
+            recordType === 'player'
+              ? 'bg-blue-600 dark:bg-blue-800 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          Player Records
+        </button>
+        <button
+          onClick={() => handleRecordTypeChange('rookie')}
+          className={`px-6 py-3 rounded-lg font-semibold transition ${
+            recordType === 'rookie'
+              ? 'bg-blue-600 dark:bg-blue-800 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          }`}
+        >
+          Rookie Records
+        </button>
+      </div>
 
       <div className="bg-white rounded-lg shadow mb-6">
         <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg">
-          <h2 className="text-xl font-semibold">Top 10 Scoring Performances</h2>
+          <h2 className="text-xl font-semibold">
+            Top 10 {recordType === 'player' ? 'Player' : 'Rookie'} Scoring
+            Performances
+          </h2>
         </div>
 
         {/* View Tabs */}
@@ -119,7 +171,9 @@ export default function Players() {
         <div className="flex flex-wrap items-center gap-4 px-6 py-3 border-b border-gray-200 bg-gray-50">
           {/* Match Type */}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500 uppercase">Type:</span>
+            <span className="text-xs font-medium text-gray-500 uppercase">
+              Type:
+            </span>
             <div className="flex rounded-md overflow-hidden border border-gray-300">
               {matchTypes.map((mt) => (
                 <button
@@ -139,7 +193,9 @@ export default function Players() {
 
           {/* Roster Type */}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500 uppercase">Roster:</span>
+            <span className="text-xs font-medium text-gray-500 uppercase">
+              Roster:
+            </span>
             <div className="flex rounded-md overflow-hidden border border-gray-300">
               {rosterTypes.map((rt) => (
                 <button
@@ -159,7 +215,9 @@ export default function Players() {
 
           {/* Position Filter */}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-gray-500 uppercase">Position:</span>
+            <span className="text-xs font-medium text-gray-500 uppercase">
+              Position:
+            </span>
             <select
               value={position}
               onChange={(e) => setPosition(e.target.value)}
@@ -177,21 +235,27 @@ export default function Players() {
         {/* Table */}
         {isLoading ? (
           <div className="p-6">
-            <p className="text-gray-600">Loading player records...</p>
+            <p className="text-gray-600">Loading records...</p>
           </div>
         ) : error ? (
           <div className="p-6">
-            <p className="text-red-600">Error loading records: {(error as Error).message}</p>
+            <p className="text-red-600">
+              Error loading records: {(error as Error).message}
+            </p>
           </div>
         ) : records.length === 0 ? (
           <div className="p-6">
-            <p className="text-gray-600">No records found for the selected filters.</p>
+            <p className="text-gray-600">
+              No records found for the selected filters.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             {view === 'game' && <GameTable records={records} thClass={thClass} />}
             {view === 'season' && <SeasonTable records={records} thClass={thClass} />}
-            {view === 'career' && <CareerTable records={records} thClass={thClass} />}
+            {view === 'career' && recordType === 'player' && (
+              <CareerTable records={records} thClass={thClass} />
+            )}
           </div>
         )}
       </div>
@@ -199,7 +263,13 @@ export default function Players() {
   );
 }
 
-function GameTable({ records, thClass }: { records: GameRecord[]; thClass: string }) {
+function GameTable({
+  records,
+  thClass,
+}: {
+  records: GameRecord[];
+  thClass: string;
+}) {
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -217,18 +287,35 @@ function GameTable({ records, thClass }: { records: GameRecord[]; thClass: strin
       </thead>
       <tbody className="divide-y divide-gray-200">
         {records.map((rec: GameRecord) => (
-          <tr key={`${rec.rank}-${rec.season}-${rec.week}`} className="hover:bg-gray-50">
-            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">{rec.rank}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 font-medium">{rec.player_name}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.position}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.team}</td>
+          <tr
+            key={`${rec.rank}-${rec.season}-${rec.week}`}
+            className="hover:bg-gray-50"
+          >
+            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">
+              {rec.rank}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+              {rec.player_name}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.position}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.team}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
               {rec.points.toFixed(2)}
             </td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.season}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.week}</td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.season}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.week}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900">{rec.owner_name}</td>
-            <td className="px-4 py-3 text-sm text-gray-900">{rec.team_name || '-'}</td>
+            <td className="px-4 py-3 text-sm text-gray-900">
+              {rec.team_name || '-'}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -236,7 +323,13 @@ function GameTable({ records, thClass }: { records: GameRecord[]; thClass: strin
   );
 }
 
-function SeasonTable({ records, thClass }: { records: SeasonRecord[]; thClass: string }) {
+function SeasonTable({
+  records,
+  thClass,
+}: {
+  records: SeasonRecord[];
+  thClass: string;
+}) {
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -256,18 +349,34 @@ function SeasonTable({ records, thClass }: { records: SeasonRecord[]; thClass: s
       <tbody className="divide-y divide-gray-200">
         {records.map((rec: SeasonRecord) => (
           <tr key={`${rec.rank}-${rec.season}`} className="hover:bg-gray-50">
-            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">{rec.rank}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 font-medium">{rec.player_name}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.position}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.team}</td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">
+              {rec.rank}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+              {rec.player_name}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.position}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.team}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
               {rec.total_points.toFixed(2)}
             </td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.games_played}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.avg_points.toFixed(2)}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.season}</td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.games_played}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-right">
+              {rec.avg_points.toFixed(2)}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.season}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900">{rec.owner_name}</td>
-            <td className="px-4 py-3 text-sm text-gray-900">{rec.team_name || '-'}</td>
+            <td className="px-4 py-3 text-sm text-gray-900">
+              {rec.team_name || '-'}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -275,7 +384,13 @@ function SeasonTable({ records, thClass }: { records: SeasonRecord[]; thClass: s
   );
 }
 
-function CareerTable({ records, thClass }: { records: CareerRecord[]; thClass: string }) {
+function CareerTable({
+  records,
+  thClass,
+}: {
+  records: CareerRecord[];
+  thClass: string;
+}) {
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -294,16 +409,30 @@ function CareerTable({ records, thClass }: { records: CareerRecord[]; thClass: s
       <tbody className="divide-y divide-gray-200">
         {records.map((rec: CareerRecord) => (
           <tr key={`${rec.rank}-${rec.player_name}`} className="hover:bg-gray-50">
-            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">{rec.rank}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 font-medium">{rec.player_name}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.position}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.team}</td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center font-medium">
+              {rec.rank}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+              {rec.player_name}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.position}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.team}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-right font-semibold">
               {rec.total_points.toFixed(2)}
             </td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.games_played}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-right">{rec.avg_points.toFixed(2)}</td>
-            <td className="px-4 py-3 text-sm text-gray-900 text-center">{rec.seasons_played}</td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.games_played}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-right">
+              {rec.avg_points.toFixed(2)}
+            </td>
+            <td className="px-4 py-3 text-sm text-gray-900 text-center">
+              {rec.seasons_played}
+            </td>
             <td className="px-4 py-3 text-sm text-gray-900">{rec.owner_name}</td>
           </tr>
         ))}

@@ -8,9 +8,9 @@ export default function Layout() {
 
   const navLinks = [
     { to: '/', label: 'Standings' },
+    { to: '/power-rankings', label: 'Power Rankings' },
     { to: '/taxi-squads', label: 'Taxi Squads' },
-    { to: '/players', label: 'Player Records' },
-    { to: '/rookie-records', label: 'Rookie Records' },
+    { to: '/records', label: 'Records' },
     { to: '/head-to-head', label: 'H2H' },
     { to: '/owners', label: 'Owners' },
     { to: '/drafts', label: 'Drafts' },
