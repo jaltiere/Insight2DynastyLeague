@@ -92,6 +92,12 @@ export const api = {
   getPlayoffOdds: (season?: number) =>
     apiClient.get(season ? `/playoffs/${season}` : '/playoffs').then(res => res.data),
 
+  // Power Rankings
+  getPowerRankings: (season?: number) =>
+    apiClient.get(season ? `/power-rankings/${season}` : '/power-rankings').then(res => res.data),
+  getRosterBreakdown: (season: number, rosterId: number) =>
+    apiClient.get(`/power-rankings/${season}/roster/${rosterId}`).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
