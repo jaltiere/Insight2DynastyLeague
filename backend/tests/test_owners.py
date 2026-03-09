@@ -340,4 +340,4 @@ async def test_owner_trophies_zero_when_no_awards(client, db_session):
     response = await client.get("/api/owners")
     assert response.status_code == 200
     owner = response.json()["owners"][0]
-    assert owner["trophies"] == {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0}
+    assert owner["trophies"] == {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0, "bench_points": 0}
