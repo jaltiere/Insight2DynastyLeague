@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import DraftCountdownBanner from '../components/DraftCountdownBanner';
+import type { StandingsTeam, StandingsResponse, Transaction } from '../types';
 
 const POSITION_COLORS: Record<string, string> = {
   QB: 'bg-pink-500',
@@ -32,7 +33,7 @@ function DivisionTable({
   divisionName,
   headerColor,
 }: {
-  teams: any[];
+  teams: StandingsTeam[];
   divisionName: string;
   headerColor: string;
 }) {
@@ -57,7 +58,7 @@ function DivisionTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {teams.map((team: any) => (
+            {teams.map((team) => (
               <tr key={team.roster_id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
                   {team.team_name
@@ -88,7 +89,7 @@ function formatDate(ms: number | null): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function TransactionCard({ txn }: { txn: any }) {
+function TransactionCard({ txn }: { txn: Transaction }) {
   const typeLabel = txn.type === 'free_agent'
     ? 'Free Agent'
     : txn.type?.charAt(0).toUpperCase() + txn.type?.slice(1);
@@ -111,16 +112,16 @@ function TransactionCard({ txn }: { txn: any }) {
 
       {isTrade ? (
         <div className="space-y-1.5 mt-1">
-          {txn.owners?.map((owner: any) => {
+          {txn.owners?.map((owner) => {
             const rid = owner.roster_id;
             const teamName = owner.team_name || owner.username;
-            const received = txn.adds?.filter((a: any) => a.roster_id === rid) || [];
-            const gave = txn.drops?.filter((d: any) => d.roster_id === rid) || [];
+            const received = txn.adds?.filter((a) => a.roster_id === rid) || [];
+            const gave = txn.drops?.filter((d) => d.roster_id === rid) || [];
             const picksGot = txn.draft_picks?.filter(
-              (p: any) => p.owner_id === rid && p.previous_owner_id !== rid
+              (p) => p.owner_id === rid && p.previous_owner_id !== rid
             ) || [];
             const picksLost = txn.draft_picks?.filter(
-              (p: any) => p.previous_owner_id === rid && p.owner_id !== rid
+              (p) => p.previous_owner_id === rid && p.owner_id !== rid
             ) || [];
 
             if (!received.length && !gave.length && !picksGot.length && !picksLost.length) return null;
@@ -131,13 +132,13 @@ function TransactionCard({ txn }: { txn: any }) {
                 {(received.length > 0 || picksGot.length > 0) && (
                   <div className="mb-0.5">
                     <span className="text-xs font-semibold text-green-600 dark:text-green-400">Received:</span>
-                    {received.map((add: any) => (
+                    {received.map((add) => (
                       <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                         <PositionBadge position={add.position} />
                         <span className="text-xs text-gray-800">{add.player_name}</span>
                       </div>
                     ))}
-                    {picksGot.map((pick: any, idx: number) => (
+                    {picksGot.map((pick, idx) => (
                       <div key={`pg-${idx}`} className="text-xs text-gray-800 mt-0.5 ml-1">
                         {pick.season} Rd {pick.round} pick
                       </div>
@@ -147,13 +148,13 @@ function TransactionCard({ txn }: { txn: any }) {
                 {(gave.length > 0 || picksLost.length > 0) && (
                   <div>
                     <span className="text-xs font-semibold text-red-600">Gave up:</span>
-                    {gave.map((drop: any) => (
+                    {gave.map((drop) => (
                       <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
                         <PositionBadge position={drop.position} />
                         <span className="text-xs text-gray-800">{drop.player_name}</span>
                       </div>
                     ))}
-                    {picksLost.map((pick: any, idx: number) => (
+                    {picksLost.map((pick, idx) => (
                       <div key={`pl-${idx}`} className="text-xs text-gray-800 mt-0.5 ml-1">
                         {pick.season} Rd {pick.round} pick
                       </div>
@@ -168,13 +169,13 @@ function TransactionCard({ txn }: { txn: any }) {
         <>
           {txn.owners?.length > 0 && (
             <div className="text-xs font-medium text-gray-700 mb-1 truncate">
-              {txn.owners.map((o: any) => o.team_name || o.username).join(', ')}
+              {txn.owners.map((o) => o.team_name || o.username).join(', ')}
             </div>
           )}
           {txn.adds?.length > 0 && (
             <div className="mb-1">
               <span className="text-xs font-semibold text-green-600 dark:text-green-400">Add:</span>
-              {txn.adds.map((add: any) => (
+              {txn.adds.map((add) => (
                 <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                   <PositionBadge position={add.position} />
                   <span className="text-xs text-gray-800">{add.player_name}</span>
@@ -185,7 +186,7 @@ function TransactionCard({ txn }: { txn: any }) {
           {txn.drops?.length > 0 && (
             <div className="mb-1">
               <span className="text-xs font-semibold text-red-600">Drop:</span>
-              {txn.drops.map((drop: any) => (
+              {txn.drops.map((drop) => (
                 <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
                   <PositionBadge position={drop.position} />
                   <span className="text-xs text-gray-800">{drop.player_name}</span>
@@ -213,12 +214,12 @@ const DIVISION_COLORS = [
 export default function Home() {
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
-  const { data: seasonsData } = useQuery({
+  const { data: seasonsData } = useQuery<{ seasons: number[] }>({
     queryKey: ['seasons'],
     queryFn: api.getSeasons,
   });
 
-  const { data: standings, isLoading, error } = useQuery({
+  const { data: standings, isLoading, error } = useQuery<StandingsResponse>({
     queryKey: ['standings', selectedSeason],
     queryFn: () =>
       selectedSeason
@@ -226,7 +227,7 @@ export default function Home() {
         : api.getStandings(),
   });
 
-  const { data: transactionsData } = useQuery({
+  const { data: transactionsData } = useQuery<{ transactions: Transaction[] }>({
     queryKey: ['recentTransactions'],
     queryFn: () => api.getRecentTransactions(10),
   });
@@ -259,25 +260,25 @@ export default function Home() {
     divisions.push({
       num: i,
       name: standings?.division_names?.[String(i)] || `Division ${i}`,
-      teams: standings?.standings?.filter((team: any) => team.division === i) || [],
+      teams: standings?.standings?.filter((team) => team.division === i) || [],
     });
   }
 
-  const transactions = transactionsData?.transactions || [];
+  const transactions: Transaction[] = transactionsData?.transactions || [];
 
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-4xl font-bold">Standings - {standings?.season}</h1>
         <DraftCountdownBanner />
-        {seasonsData?.seasons?.length > 0 && (
+        {(seasonsData?.seasons?.length ?? 0) > 0 && (
           <select
             className="border border-gray-300 rounded-lg px-4 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={selectedSeason ?? ''}
             onChange={(e) => setSelectedSeason(e.target.value ? Number(e.target.value) : null)}
           >
             <option value="">Current Season</option>
-            {seasonsData.seasons.map((year: number) => (
+            {seasonsData!.seasons.map((year) => (
               <option key={year} value={year}>{year}</option>
             ))}
           </select>
@@ -299,7 +300,7 @@ export default function Home() {
         <div className="mt-8">
           <h2 className="text-2xl font-bold mb-4">Recent Transactions</h2>
           <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {transactions.map((txn: any) => (
+            {transactions.map((txn) => (
               <TransactionCard key={txn.id} txn={txn} />
             ))}
           </div>
