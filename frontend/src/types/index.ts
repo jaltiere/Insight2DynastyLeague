@@ -99,11 +99,3 @@ export interface CurrentWeekInfo {
   week: number;
   season: number;
 }
-
-// Explicit exports for better compatibility
-export type {
-  MatchupRecap,
-  WeekRecapsResponse,
-  CurrentWeekMatchupsResponse,
-  CurrentWeekInfo
-};
