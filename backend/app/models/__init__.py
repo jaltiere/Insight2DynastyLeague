@@ -9,6 +9,7 @@ from app.models.transaction import Transaction
 from app.models.draft import Draft, DraftPick
 from app.models.season_award import SeasonAward
 from app.models.matchup_player_point import MatchupPlayerPoint
+from app.models.matchup_recap import MatchupRecap
 
 __all__ = [
     "League",
@@ -22,4 +23,5 @@ __all__ = [
     "DraftPick",
     "SeasonAward",
     "MatchupPlayerPoint",
+    "MatchupRecap",
 ]

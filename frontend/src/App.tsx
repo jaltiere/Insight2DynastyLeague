@@ -13,6 +13,7 @@ import Transactions from './pages/Transactions';
 import TradeGrades from './pages/TradeGrades';
 import DraftRankings from './pages/DraftRankings';
 import Playoffs from './pages/Playoffs';
+import MatchupRecaps from './pages/MatchupRecaps';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,7 @@ function App() {
             <Route path="draft-rankings" element={<DraftRankings />} />
             <Route path="league-history" element={<LeagueHistory />} />
             <Route path="playoffs" element={<Playoffs />} />
+            <Route path="matchup-recaps" element={<MatchupRecaps />} />
           </Route>
         </Routes>
       </BrowserRouter>

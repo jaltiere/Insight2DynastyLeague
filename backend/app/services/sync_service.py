@@ -170,6 +170,41 @@ class SyncService:
             # Sync matchups for all weeks
             await self._sync_matchups_for_league(current_season, weeks_to_sync)
 
+            # Generate matchup recaps and predictions (week 2+)
+            if current_week >= 2 and season_type in ("regular", "post"):
+                from app.services.matchup_recap_service import MatchupRecapService
+                from app.config import get_settings
+
+                settings = get_settings()
+
+                # Get season object from database
+                from app.models.season import Season
+                season_result = await self.db.execute(
+                    select(Season).where(Season.year == current_season).order_by(Season.id.desc())
+                )
+                season_obj = season_result.scalar_one_or_none()
+
+                if season_obj:
+                    # Create recap service (will use mock mode if no API key)
+                    recap_service = MatchupRecapService(self.db, settings.ANTHROPIC_API_KEY or "")
+
+                    # Tuesday: Generate previous week recaps + initial predictions
+                    if self._is_tuesday():
+                        logger.info(f"Tuesday sync: generating recaps for week {current_week - 1} and predictions for week {current_week}")
+                        await recap_service.generate_weekly_recaps(season_obj.id, current_week - 1)
+                        await recap_service.generate_current_week_predictions(season_obj.id, current_week)
+
+                    # Thursday: Regenerate predictions with updated lineups
+                    elif self._is_thursday():
+                        logger.info(f"Thursday sync: regenerating predictions for week {current_week}")
+                        await recap_service.generate_current_week_predictions(
+                            season_obj.id,
+                            current_week,
+                            regenerate=True
+                        )
+                else:
+                    logger.warning(f"Season object not found for year {current_season}, skipping recap generation")
+
             # Sync drafts
             drafts_data = await self.client.get_drafts()
             await self._sync_drafts(drafts_data, current_season)
@@ -973,4 +1008,14 @@ class SyncService:
             return final_matches[0].get("w")
 
         return None
+
+    def _is_tuesday(self) -> bool:
+        """Check if today is Tuesday."""
+        from datetime import datetime
+        return datetime.now().weekday() == 1  # Monday is 0, Tuesday is 1
+
+    def _is_thursday(self) -> bool:
+        """Check if today is Thursday."""
+        from datetime import datetime
+        return datetime.now().weekday() == 3  # Thursday is 3
 
