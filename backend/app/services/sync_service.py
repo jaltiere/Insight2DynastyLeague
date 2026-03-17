@@ -82,9 +82,18 @@ class SyncService:
                     total_weeks = reg_weeks + playoff_rounds
                     await self._sync_matchups_for_league(year, total_weeks, league_id)
                 else:
-                    # In-progress season: sync up to current week
+                    # In-progress or pre-draft season: sync up to current week
+                    current_week = nfl_state.get("week", 1)
+                    season_type = nfl_state.get("season_type", "regular")
+
+                    # During offseason, sync at least weeks 1-3 for roster transactions
+                    if current_week == 0 or season_type == "off":
+                        weeks_to_sync = 3
+                    else:
+                        weeks_to_sync = current_week
+
                     await self._sync_matchups_for_league(
-                        year, nfl_state.get("week", 1), league_id
+                        year, weeks_to_sync, league_id
                     )
 
                 # Sync drafts
@@ -99,7 +108,13 @@ class SyncService:
                 if status == "complete":
                     tx_total_weeks = reg_weeks + playoff_rounds
                 else:
-                    tx_total_weeks = nfl_state.get("week", 1)
+                    # Use same offseason logic for transactions
+                    current_week = nfl_state.get("week", 1)
+                    season_type = nfl_state.get("season_type", "regular")
+                    if current_week == 0 or season_type == "off":
+                        tx_total_weeks = 3
+                    else:
+                        tx_total_weeks = current_week
                 await self._sync_transactions(league_id, year, tx_total_weeks)
 
                 synced_seasons.append(year)
@@ -139,8 +154,21 @@ class SyncService:
             rosters_data = await self.client.get_rosters()
             await self._sync_rosters(rosters_data, current_season, users_data)
 
+            # Determine weeks to sync based on season status
+            current_week = nfl_state.get("week", 1)
+            season_type = nfl_state.get("season_type", "regular")
+
+            # During offseason (week 0), we still need to sync offseason transactions
+            # which appear in early weeks (typically week 1-3)
+            if current_week == 0 or season_type == "off":
+                # Offseason: sync at least weeks 1-3 to catch roster transactions
+                weeks_to_sync = 3
+            else:
+                # Regular/post season: sync up to current week
+                weeks_to_sync = current_week
+
             # Sync matchups for all weeks
-            await self._sync_matchups_for_league(current_season, nfl_state.get("week", 1))
+            await self._sync_matchups_for_league(current_season, weeks_to_sync)
 
             # Sync drafts
             drafts_data = await self.client.get_drafts()
@@ -155,11 +183,11 @@ class SyncService:
                     league_data.get("league_id"), int(current_season)
                 )
 
-            # Sync transactions
+            # Sync transactions (use same weeks_to_sync logic)
             await self._sync_transactions(
                 league_data.get("league_id"),
                 int(current_season),
-                nfl_state.get("week", 1)
+                weeks_to_sync
             )
 
             # Sync players (this is a large dataset)

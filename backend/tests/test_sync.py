@@ -60,3 +60,90 @@ async def test_sync_league_idempotent(client):
         response2 = await client.post("/api/sync/league")
     assert response1.status_code == 200
     assert response2.status_code == 200
+
+
+async def test_sync_offseason_transactions(client):
+    """Test that offseason transactions (week 0) sync weeks 1-3."""
+    mock = _make_mock_sleeper_client()
+    # Override NFL state to be offseason
+    mock.get_nfl_state.return_value = {
+        "season": "2026",
+        "week": 0,
+        "season_type": "off",
+    }
+    mock.get_league.return_value = {
+        "league_id": "test_league_offseason",
+        "name": "Test League Offseason",
+        "season": "2026",
+        "status": "pre_draft",
+        "settings": {"divisions": 2, "playoff_week_start": 15, "playoff_rounds": 3},
+        "scoring_settings": {},
+        "roster_positions": [],
+    }
+    # Mock transactions for weeks 1-3
+    mock.get_transactions.return_value = [
+        {
+            "transaction_id": "txn_offseason_1",
+            "type": "free_agent",
+            "status": "complete",
+            "adds": None,
+            "drops": {"8125": 2},  # Calvin Austin dropped
+            "roster_ids": [2],
+            "players": [],
+            "draft_picks": [],
+            "settings": {},
+            "status_updated": 1710072000000,  # March 10, 2026
+        }
+    ]
+
+    with patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/sync/league")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["season"] == "2026"
+
+    # Verify that get_transactions was called for weeks 1, 2, and 3
+    # (not just week 0 or week 1)
+    calls = mock.get_transactions.call_args_list
+    weeks_called = [call[0][0] for call in calls]
+    assert 1 in weeks_called
+    assert 2 in weeks_called
+    assert 3 in weeks_called
+
+
+async def test_sync_regular_season_transactions(client):
+    """Test that regular season transactions sync up to current week."""
+    mock = _make_mock_sleeper_client()
+    # Override NFL state to be week 5 of regular season
+    mock.get_nfl_state.return_value = {
+        "season": "2025",
+        "week": 5,
+        "season_type": "regular",
+    }
+    mock.get_league.return_value = {
+        "league_id": "test_league_regular",
+        "name": "Test League Regular",
+        "season": "2025",
+        "status": "in_season",
+        "settings": {"divisions": 2, "playoff_week_start": 15, "playoff_rounds": 3},
+        "scoring_settings": {},
+        "roster_positions": [],
+    }
+    mock.get_transactions.return_value = []
+
+    with patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/sync/league")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+
+    # Verify that get_transactions was called for weeks 1-5
+    calls = mock.get_transactions.call_args_list
+    weeks_called = [call[0][0] for call in calls]
+    assert 1 in weeks_called
+    assert 5 in weeks_called
+    # Should NOT call week 6 or beyond
+    assert 6 not in weeks_called
