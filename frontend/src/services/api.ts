@@ -98,6 +98,16 @@ export const api = {
   getRosterBreakdown: (season: number, rosterId: number) =>
     apiClient.get(`/power-rankings/${season}/roster/${rosterId}`).then(res => res.data),
 
+  // Matchup Recaps
+  getCurrentWeekMatchups: () =>
+    apiClient.get('/matchup-recaps/current').then(res => res.data),
+  getPreviousWeekRecaps: () =>
+    apiClient.get('/matchup-recaps/previous').then(res => res.data),
+  getWeekRecaps: (week: number, season?: number) =>
+    apiClient.get(`/matchup-recaps/week/${week}`, { params: { season } }).then(res => res.data),
+  getNewsletterRecaps: (week: number, season?: number) =>
+    apiClient.get(`/matchup-recaps/newsletter/${week}`, { params: { season } }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

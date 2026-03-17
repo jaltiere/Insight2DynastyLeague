@@ -66,3 +66,44 @@ export interface Transaction {
   status_updated: number | null;
   metadata_notes: string | null;
 }
+
+// Matchup Recap types
+export interface MatchupRecap {
+  matchup_id: number;
+  week: number;
+  season: number;
+  home_team: string;
+  away_team: string;
+  home_score: number | null;
+  away_score: number | null;
+  recap_text: string | null;
+  predictions_text: string | null;
+  recap_type: string;
+  recap_metadata: Record<string, any> | null;
+  generated_at: string | null;
+}
+
+export interface WeekRecapsResponse {
+  week: number;
+  season: number;
+  recaps: MatchupRecap[];
+}
+
+export interface CurrentWeekMatchupsResponse {
+  week: number;
+  season: number;
+  matchups: MatchupRecap[];
+}
+
+export interface CurrentWeekInfo {
+  week: number;
+  season: number;
+}
+
+// Explicit exports for better compatibility
+export type {
+  MatchupRecap,
+  WeekRecapsResponse,
+  CurrentWeekMatchupsResponse,
+  CurrentWeekInfo
+};

@@ -32,6 +32,7 @@ class Matchup(Base):
     # Relationships
     home_roster = relationship("Roster", foreign_keys=[home_roster_id], back_populates="home_matchups")
     away_roster = relationship("Roster", foreign_keys=[away_roster_id], back_populates="away_matchups")
+    recaps = relationship("MatchupRecap", back_populates="matchup", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Matchup Week {self.week}: {self.home_points} - {self.away_points}>"

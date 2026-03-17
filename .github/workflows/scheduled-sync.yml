@@ -2,9 +2,11 @@ name: Scheduled Data Sync
 
 on:
   schedule:
-    # Run daily at 10 AM EST (2 PM UTC / 14:00 UTC during EDT, 3 PM UTC / 15:00 UTC during EST)
-    # Using 14:00 UTC to match EDT (most of the year)
-    - cron: '0 14 * * *'
+    # Run on Tuesday and Thursday at 10 AM EST (2 PM UTC / 14:00 UTC during EDT)
+    # Tuesday: Generate previous week recaps + current week predictions
+    # Thursday: Regenerate current week predictions after lineup changes
+    - cron: '0 14 * * 2'  # Tuesday
+    - cron: '0 14 * * 4'  # Thursday
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 jobs:
