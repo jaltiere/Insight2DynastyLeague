@@ -45,7 +45,8 @@ Backend (Railway):
 - `DATABASE_URL` - Auto-populated by Railway MySQL plugin
 - `SLEEPER_LEAGUE_ID` - 1313933992642220032
 - `CORS_ORIGINS` - https://www.insight2dynasty.com,http://localhost:5173
-- `CRON_SECRET` - Secure random string for scheduled sync endpoint
+- `CRON_SECRET` - Secure random string for scheduled sync and recap regeneration endpoints
+- `ANTHROPIC_API_KEY` - Claude API key for AI-generated matchup recaps (optional; mock mode if empty)
 - `DEBUG` - False (production)
 - `APP_VERSION` - 1.0.0
 
@@ -106,6 +107,7 @@ Insight2DynastyLeague/
 8. **drafts** - Draft metadata
 9. **draft_picks** - Individual draft selections
 10. **season_awards** - Season winners (champion, division, consolation)
+11. **matchup_recaps** - AI-generated recaps and predictions per matchup
 
 ### Important Notes
 - Division structure changed from 4 divisions to 2 divisions
@@ -123,6 +125,8 @@ All endpoints under `/api` prefix:
 - **Owners**: `/api/owners`, `/api/owners/{owner_id}`
 - **Drafts**: `/api/drafts`, `/api/drafts/{year}`
 - **League History**: `/api/league-history`, `/api/league-history/{season}`
+- **Matchup Recaps**: `/api/matchup-recaps/current`, `/api/matchup-recaps/previous`, `/api/matchup-recaps/week/{week}`
+- **Recap Admin**: `/api/matchup-recaps/regenerate/{week}`, `/api/matchup-recaps/regenerate-predictions/{week}` (require CRON_SECRET)
 - **Sync**: `/api/sync/league` (admin endpoint)
 
 ## Frontend Pages
@@ -261,6 +265,71 @@ git pull origin main
 - Always add optional chaining for nullable API data
 - Clear, descriptive variable names
 
+## AI-Generated Matchup Recaps
+
+### Overview
+The site generates AI-powered recaps for completed matchups and predictions for upcoming matchups using the Claude API (claude-haiku-4-5). Recaps include top performers, lineup mistakes, head-to-head history, and playoff implications.
+
+### Key Files
+- `backend/app/services/matchup_recap_service.py` - Core generation logic (context building, Claude API calls)
+- `backend/app/api/routes/matchup_recaps.py` - REST endpoints for reading and regenerating recaps
+- `backend/app/models/matchup_recap.py` - Database model (`matchup_recaps` table)
+- `.github/workflows/weekly-recaps.yml` - Scheduled GitHub Actions workflow
+
+### Environment Variables
+- `ANTHROPIC_API_KEY` - Claude API key for recap generation. If empty/missing, the service runs in **mock mode** and generates placeholder text instead of calling the API.
+
+### How Recaps Are Generated
+- **Recaps** (completed matchups): Built from winner/loser scores, top 5 performers with team attribution, lineup mistakes (benched > starter), H2H history, and bracket context
+- **Predictions** (upcoming matchups): Built from team records, projected scores, H2H history, and standings implications
+- **Model**: `claude-haiku-4-5-20251001`, temperature 0.9, max 250 tokens
+
+### Scheduling & Automation
+Recaps are generated on a Tuesday/Thursday schedule during the NFL season:
+
+| Day | Action | Trigger |
+|-----|--------|---------|
+| Tuesday | Generate previous week recaps + current week predictions | `scheduled-sync.yml` and `weekly-recaps.yml` |
+| Thursday | Regenerate predictions (updated lineups) | `scheduled-sync.yml` and `weekly-recaps.yml` |
+
+**Two workflows trigger generation:**
+1. `scheduled-sync.yml` - Calls `/api/cron/sync` which includes recap generation inside `sync_service.py`
+2. `weekly-recaps.yml` - Calls regenerate endpoints directly for dedicated recap generation
+
+### Offseason Guards (Three Layers)
+Recaps are **frozen during the NFL offseason** to prevent regeneration when no games are being played. The Sleeper API's `/state/nfl` endpoint is used to detect offseason (`season_type == "off"` or `week == 0`).
+
+1. **Sync Service** (`sync_service.py`): Only generates recaps when `season_type in ("regular", "post")` and `current_week >= 2`
+2. **Regenerate Endpoints** (`matchup_recaps.py`): Both `regenerate/{week}` and `regenerate-predictions/{week}` check NFL state and return `{"status": "skipped"}` during offseason
+3. **GitHub Actions** (`weekly-recaps.yml`): Checks Sleeper NFL state first and skips all generation steps during offseason
+
+### Manual Regeneration
+Both regenerate endpoints accept a `?force=true` query parameter to bypass the offseason guard:
+
+```bash
+# Regenerate recaps for a specific week (e.g., championship week 17)
+curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate/17?season=2025&force=true" \
+  -H "Authorization: Bearer $CRON_SECRET"
+
+# Regenerate predictions for a specific week
+curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/5?season=2025&force=true" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+You can also trigger the `weekly-recaps.yml` workflow manually from GitHub Actions (workflow_dispatch), but note this will be skipped during offseason unless the endpoints are called with `?force=true`.
+
+### Read Endpoints (No Auth Required)
+- `GET /api/matchup-recaps/current` - Current week matchups with predictions (empty during offseason)
+- `GET /api/matchup-recaps/previous` - Previous week recaps (shows championship week during offseason)
+- `GET /api/matchup-recaps/week/{week}?season=YYYY` - Recaps for a specific week
+- `GET /api/matchup-recaps/newsletter/{week}` - Recaps formatted for newsletter
+
+### Database Storage
+- Table: `matchup_recaps` with unique constraint on `(matchup_id, recap_type)`
+- Recap types: `weekly`, `playoff`, `prediction`
+- `generated_at` timestamp tracks when each recap was last generated
+- No automatic expiration — recaps persist until explicitly regenerated
+
 ## Data Sync Strategy
 - Initial sync: Pull all historical data from Sleeper
 - Daily sync during season: Update current week matchups
@@ -334,7 +403,8 @@ Test on multiple viewport sizes:
 - `railway.toml` - Railway deployment configuration
 - `nixpacks.toml` - Nixpacks build configuration (sets working directory to backend)
 - `.github/workflows/deploy.yml` - CI tests
-- `.github/workflows/scheduled-sync.yml` - Daily automated sync
+- `.github/workflows/scheduled-sync.yml` - Tuesday/Thursday automated sync (includes recap generation)
+- `.github/workflows/weekly-recaps.yml` - Dedicated recap generation workflow (Tuesday/Thursday)
 
 **Important Notes**:
 - Database migrations run as part of the start command (no separate migration step needed)
