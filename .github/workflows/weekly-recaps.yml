@@ -1,0 +1,50 @@
+name: Generate Weekly Recaps and Predictions
+
+on:
+  schedule:
+    # Tuesday at 10 AM UTC (after games are final)
+    - cron: '0 10 * * 2'
+    # Thursday at 14 AM UTC (lineup updates)
+    - cron: '0 14 * * 4'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  generate-recaps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine current week
+        id: week
+        run: |
+          # Get current NFL week from your API
+          WEEK=$(curl -s https://api.insight2dynasty.com/api/standings | jq -r '.week // 1')
+          echo "week=$WEEK" >> $GITHUB_OUTPUT
+          echo "Current NFL Week: $WEEK"
+
+      - name: Generate recaps (Tuesday only)
+        if: github.event.schedule == '0 10 * * 2'
+        run: |
+          PREV_WEEK=$((week - 1))
+          echo "Generating recaps for week $PREV_WEEK..."
+
+          curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate/$PREV_WEEK" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -f || echo "Failed to generate recaps"
+
+      - name: Generate predictions (Tuesday and Thursday)
+        run: |
+          echo "Generating predictions for week ${{ steps.week.outputs.week }}..."
+
+          # Get current season
+          SEASON=$(curl -s https://api.insight2dynasty.com/api/standings | jq -r '.season')
+
+          curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/${{ steps.week.outputs.week }}?season=$SEASON" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -f || echo "Failed to generate predictions"
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "✅ Recap generation workflow completed"
+          echo "Day: $(date +%A)"
+          echo "Week: ${{ steps.week.outputs.week }}"

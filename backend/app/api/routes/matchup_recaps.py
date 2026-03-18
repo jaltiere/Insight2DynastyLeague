@@ -320,6 +320,52 @@ async def regenerate_recaps(
     }
 
 
+@router.post("/matchup-recaps/regenerate-predictions/{week}")
+async def regenerate_predictions(
+    week: int,
+    season: Optional[int] = None,
+    regenerate: bool = Query(True, description="Force regenerate existing predictions"),
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Admin endpoint to regenerate predictions for upcoming week (requires CRON_SECRET)."""
+    # Verify authorization
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+
+    token = authorization.replace("Bearer ", "")
+    if token != settings.CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid credentials")
+
+    # Get season
+    if season is None:
+        from app.services.sleeper_client import SleeperClient
+        client = SleeperClient()
+        nfl_state = await client.get_nfl_state()
+        season = nfl_state.get("season")
+
+    result = await db.execute(
+        select(Season).where(Season.year == season).order_by(Season.id.desc())
+    )
+    season_obj = result.scalar_one_or_none()
+
+    if not season_obj:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    # Generate predictions
+    recap_service = MatchupRecapService(db, settings.ANTHROPIC_API_KEY)
+    prediction_count = await recap_service.generate_current_week_predictions(
+        season_obj.id, week, regenerate=regenerate
+    )
+
+    return {
+        "status": "success",
+        "message": f"Generated {prediction_count} predictions for week {week}",
+        "week": week,
+        "season": season
+    }
+
+
 async def _build_matchup_recap_response(
     matchup: Matchup,
     recap_type: str,

@@ -75,14 +75,15 @@ class MatchupRecapService:
                     "recap"
                 )
 
-                # Store recap in database
+                # Store recap in database (update if exists for regeneration)
                 await self._store_recap(
                     matchup_id=matchup.id,
                     recap_text=recap_text,
                     recap_type="playoff" if matchup.match_type == "playoff" else "weekly",
                     week=week,
                     season_id=season_id,
-                    metadata=context.get("metadata", {})
+                    metadata=context.get("metadata", {}),
+                    update_if_exists=True  # Allow regeneration
                 )
 
                 recap_count += 1
@@ -204,17 +205,26 @@ class MatchupRecapService:
             winner_roster = away_roster
             loser_roster = home_roster
 
-        # Get top performers
-        top_performers = await self._get_top_performers(matchup)
+        # Get top performers with team attribution
+        top_performers = await self._get_top_performers(
+            matchup,
+            winner_roster_id=winner_roster.id,
+            loser_roster_id=loser_roster.id,
+            winner_name=winner_name,
+            loser_name=loser_name
+        )
 
         # Get lineup mistakes
         lineup_mistakes = await self._identify_lineup_mistakes(matchup)
 
         # Get H2H history
-        h2h_summary = await self._get_h2h_summary(home_user, away_user)
+        h2h_summary = await self._get_h2h_summary(home_user, away_user, matchup.match_type, matchup.id)
 
         # Calculate standings delta
         standings_delta = await self._calculate_standings_delta(matchup)
+
+        # Determine bracket/playoff context
+        bracket_label = await self._get_bracket_label(matchup)
 
         context = {
             "winner": winner_name,
@@ -224,6 +234,7 @@ class MatchupRecapService:
             "week": matchup.week,
             "season": await self._get_season_year(matchup.season_id),
             "match_type": matchup.match_type,
+            "bracket_label": bracket_label,
             "top_performers": top_performers,
             "lineup_mistakes": lineup_mistakes,
             "h2h_summary": h2h_summary,
@@ -258,7 +269,7 @@ class MatchupRecapService:
         away_record = f"{away_roster.settings.get('wins', 0)}-{away_roster.settings.get('losses', 0)}-{away_roster.settings.get('ties', 0)}"
 
         # Get H2H history
-        h2h_summary = await self._get_h2h_summary(home_user, away_user)
+        h2h_summary = await self._get_h2h_summary(home_user, away_user, matchup.match_type, matchup.id)
 
         # Calculate projected scores (use max potential if available, otherwise estimate)
         home_projected = matchup.home_max_potential_points or 100.0
@@ -315,9 +326,9 @@ class MatchupRecapService:
         for attempt in range(max_retries):
             try:
                 response = await self.anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=200,  # Keep recaps concise
-                    temperature=0.8,  # Add some personality
+                    model="claude-haiku-4-5-20251001",  # Claude 4.5 Haiku - fast and cost-effective
+                    max_tokens=250,  # Keep recaps concise but allow room for context
+                    temperature=0.9,  # Higher temperature for more variety
                     messages=[
                         {"role": "user", "content": prompt}
                     ]
@@ -375,8 +386,9 @@ class MatchupRecapService:
         """Build prompt for weekly recap generation."""
         return f"""You are a snarky fantasy football analyst writing a matchup recap for a dynasty league.
 
+GAME CONTEXT: {context['bracket_label']}
 Matchup: {context['winner']} ({context['winner_score']:.2f} pts) defeated {context['loser']} ({context['loser_score']:.2f} pts)
-Week {context['week']}, {context['season']} season, {context['match_type']} matchup
+Week {context['week']}, {context['season']} season
 
 Head-to-Head History:
 {context['h2h_summary']}
@@ -390,7 +402,16 @@ Lineup Mistakes:
 Standings Impact:
 {context['standings_delta']}
 
-Write 3-4 sentences: highlight the outcome, call out the biggest lineup mistake (if any), mention a standout player, and explain playoff implications. Be snarky and fun. Under 100 words."""
+IMPORTANT INSTRUCTIONS:
+- Vary your opening - DO NOT start with "Well, well, well" or similar repetitive phrases
+- Pay attention to the GAME CONTEXT above - if it's a championship game, this decided the champion!
+- If it's a 3rd place game, consolation championship, or other bracket game, acknowledge that specifically
+- CRITICAL: Pay careful attention to which team each player is on (shown in parentheses)
+- DO NOT attribute a player to the wrong team - verify team attribution before mentioning any player
+- Tailor your commentary to the stakes of THIS specific game
+- Be snarky and fun, but contextually aware
+
+Write 3-4 sentences: highlight the outcome with appropriate context for the bracket/playoff round, call out the biggest lineup mistake (if any), mention a standout player WITH CORRECT TEAM ATTRIBUTION, and explain what this result means. Under 100 words."""
 
     def _build_prediction_prompt(self, context: Dict[str, Any]) -> str:
         """Build prompt for matchup prediction generation."""
@@ -413,7 +434,13 @@ Projected Scores:
 Standings Context:
 {context['standings_implications']}
 
-Write 2-3 sentences: predict the winner, highlight what's at stake (playoff positioning, division race). Keep it engaging. Under 75 words."""
+IMPORTANT INSTRUCTIONS:
+- DO NOT make up or assume player rosters or lineups - you don't have that information
+- Keep {context['team1']} and {context['team2']} clearly distinguished
+- Base your prediction on records, projected scores, and H2H history provided above
+- Do not confuse which team has which record or projection
+
+Write 2-3 sentences: predict the winner based on the data provided, highlight what's at stake (playoff positioning, division race). Keep it engaging but factually grounded. Under 75 words."""
 
     async def _store_recap(
         self,
@@ -473,10 +500,10 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
     async def _get_users(self, home_roster: Roster, away_roster: Roster) -> Tuple[User, User]:
         """Get users for home and away rosters."""
         home_user_result = await self.db.execute(
-            select(User).where(User.user_id == home_roster.owner_id)
+            select(User).where(User.id == home_roster.user_id)
         )
         away_user_result = await self.db.execute(
-            select(User).where(User.user_id == away_roster.owner_id)
+            select(User).where(User.id == away_roster.user_id)
         )
         return home_user_result.scalar_one(), away_user_result.scalar_one()
 
@@ -487,14 +514,21 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
         )
         return result.scalar_one()
 
-    async def _get_top_performers(self, matchup: Matchup) -> str:
-        """Get top 3 scoring players from the matchup."""
+    async def _get_top_performers(
+        self,
+        matchup: Matchup,
+        winner_roster_id: int,
+        loser_roster_id: int,
+        winner_name: str,
+        loser_name: str
+    ) -> str:
+        """Get top 3 scoring players from the matchup with team attribution."""
         result = await self.db.execute(
             select(MatchupPlayerPoint, Player)
-            .join(Player, Player.player_id == MatchupPlayerPoint.player_id, isouter=True)
+            .join(Player, Player.id == MatchupPlayerPoint.player_id, isouter=True)
             .where(MatchupPlayerPoint.matchup_id == matchup.id)
             .order_by(MatchupPlayerPoint.points.desc())
-            .limit(3)
+            .limit(5)  # Get top 5 to show best from each team
         )
 
         performers = result.all()
@@ -504,7 +538,16 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
         lines = []
         for mpp, player in performers:
             player_name = player.full_name if player else f"Player {mpp.player_id}"
-            lines.append(f"- {player_name}: {mpp.points:.2f} pts")
+
+            # Determine which team this player is on
+            if mpp.roster_id == winner_roster_id:
+                team = f"{winner_name}'s team"
+            elif mpp.roster_id == loser_roster_id:
+                team = f"{loser_name}'s team"
+            else:
+                team = "unknown team"
+
+            lines.append(f"- {player_name}: {mpp.points:.2f} pts ({team})")
 
         return "\n".join(lines)
 
@@ -513,7 +556,7 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
         # Get all player points for this matchup
         result = await self.db.execute(
             select(MatchupPlayerPoint, Player)
-            .join(Player, Player.player_id == MatchupPlayerPoint.player_id, isouter=True)
+            .join(Player, Player.id == MatchupPlayerPoint.player_id, isouter=True)
             .where(MatchupPlayerPoint.matchup_id == matchup.id)
             .order_by(MatchupPlayerPoint.roster_id, MatchupPlayerPoint.points.desc())
         )
@@ -551,18 +594,31 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
         # Return top 2 mistakes
         return "\n".join(mistakes[:2])
 
-    async def _get_h2h_summary(self, user1: User, user2: User) -> str:
-        """Get head-to-head history summary between two users."""
-        # Query all matchups between these two users
+    async def _get_h2h_summary(self, user1: User, user2: User, match_type: str, current_matchup_id: int) -> str:
+        """Get head-to-head history summary between two users, filtered by match type.
+
+        Excludes the current matchup being recapped to show only PAST meetings.
+        """
+        # Determine context label based on match type
+        if match_type == "playoff":
+            context_label = "playoff"
+        elif match_type == "consolation":
+            context_label = "consolation"
+        else:
+            context_label = "regular season"
+
+        # Query PAST matchups between these two users (exclude current matchup)
         result = await self.db.execute(
             select(Matchup)
             .join(Roster, Matchup.home_roster_id == Roster.id)
             .where(
                 and_(
-                    Roster.owner_id.in_([user1.user_id, user2.user_id]),
+                    Roster.user_id.in_([user1.id, user2.id]),
                     Matchup.away_roster_id.in_(
-                        select(Roster.id).where(Roster.owner_id.in_([user1.user_id, user2.user_id]))
-                    )
+                        select(Roster.id).where(Roster.user_id.in_([user1.id, user2.id]))
+                    ),
+                    Matchup.match_type == match_type,  # Filter by match type
+                    Matchup.id != current_matchup_id  # EXCLUDE current matchup
                 )
             )
         )
@@ -570,28 +626,96 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
         matchups = result.scalars().all()
 
         if not matchups:
-            return "First meeting between these teams"
+            # Also get ALL-TIME record for context (exclude current matchup)
+            all_time_result = await self.db.execute(
+                select(Matchup)
+                .join(Roster, Matchup.home_roster_id == Roster.id)
+                .where(
+                    and_(
+                        Roster.user_id.in_([user1.id, user2.id]),
+                        Matchup.away_roster_id.in_(
+                            select(Roster.id).where(Roster.user_id.in_([user1.id, user2.id]))
+                        ),
+                        Matchup.id != current_matchup_id  # EXCLUDE current matchup
+                    )
+                )
+            )
+            all_time_matchups = all_time_result.scalars().all()
 
-        user1_wins = sum(1 for m in matchups if m.winner_roster_id and await self._is_roster_owner(m.winner_roster_id, user1.user_id))
+            if not all_time_matchups:
+                return "First meeting between these teams overall"
+
+            # Count all-time wins
+            all_time_user1_wins = 0
+            for m in all_time_matchups:
+                if m.winner_roster_id and await self._is_roster_owner(m.winner_roster_id, user1.id):
+                    all_time_user1_wins += 1
+            all_time_user2_wins = len(all_time_matchups) - all_time_user1_wins
+
+            user1_name = user1.display_name or user1.username
+            user2_name = user2.display_name or user2.username
+
+            # Format all-time series correctly (past tense since this excludes current game)
+            if all_time_user1_wins > all_time_user2_wins:
+                all_time_str = f"{user1_name} led {all_time_user1_wins}-{all_time_user2_wins}"
+            elif all_time_user2_wins > all_time_user1_wins:
+                all_time_str = f"{user2_name} led {all_time_user2_wins}-{all_time_user1_wins}"
+            else:
+                all_time_str = f"series was tied {all_time_user1_wins}-{all_time_user2_wins}"
+
+            return f"First {context_label} meeting (all-time series: {all_time_str})"
+
+        # Count wins for each user in this match type
+        user1_wins = 0
+        for m in matchups:
+            if m.winner_roster_id and await self._is_roster_owner(m.winner_roster_id, user1.id):
+                user1_wins += 1
         user2_wins = len(matchups) - user1_wins
 
         user1_name = user1.display_name or user1.username
         user2_name = user2.display_name or user2.username
 
-        return f"{len(matchups)} previous meetings, series {user1_name} leads {user1_wins}-{user2_wins}"
+        # Format series correctly - winner's record first
+        if user1_wins > user2_wins:
+            series_str = f"{user1_name} leads {user1_wins}-{user2_wins}"
+        elif user2_wins > user1_wins:
+            series_str = f"{user2_name} leads {user2_wins}-{user1_wins}"
+        else:
+            series_str = f"series tied {user1_wins}-{user2_wins}"
+
+        # Use singular "meeting" for 1, plural "meetings" for multiple
+        meeting_word = "meeting" if len(matchups) == 1 else "meetings"
+        return f"{len(matchups)} previous {context_label} {meeting_word}, {series_str}"
 
     async def _is_roster_owner(self, roster_id: int, user_id: str) -> bool:
         """Check if a roster belongs to a user."""
         result = await self.db.execute(
-            select(Roster.owner_id).where(Roster.id == roster_id)
+            select(Roster.user_id).where(Roster.id == roster_id)
         )
         owner_id = result.scalar_one_or_none()
         return owner_id == user_id
 
     async def _calculate_standings_delta(self, matchup: Matchup) -> str:
         """Calculate how this matchup affected standings."""
-        # Simplified version - would need full standings calculation
-        return "Standings impact calculation not yet implemented"
+        # For playoff games, the impact is clear from the bracket
+        if matchup.week >= 15:
+            if matchup.match_type == "playoff":
+                if matchup.matchup_id == 1:
+                    return "Winner claims the championship trophy and bragging rights"
+                elif matchup.matchup_id == 2:
+                    return "Determines 3rd and 4th place finishers in the playoff bracket"
+                else:
+                    return "Determines playoff seeding for championship round"
+            elif matchup.match_type == "consolation":
+                if matchup.matchup_id == 4:
+                    return "Winner finishes 7th overall (best of the non-playoff teams)"
+                elif matchup.matchup_id == 5:
+                    return "Winner finishes 9th overall in the final standings"
+                else:
+                    return "Determines final consolation bracket seeding"
+
+        # Regular season - generic impact
+        return "Affects playoff seeding and division standings"
 
     async def _calculate_prediction_implications(
         self, matchup: Matchup, home_roster: Roster, away_roster: Roster
@@ -607,3 +731,31 @@ Write 2-3 sentences: predict the winner, highlight what's at stake (playoff posi
             return "Battle to avoid bottom of standings"
         else:
             return "Mid-pack battle for playoff positioning"
+
+    async def _get_bracket_label(self, matchup: Matchup) -> str:
+        """Get human-readable bracket label for playoff matchups."""
+        # Regular season games
+        if matchup.week < 15:
+            return f"Week {matchup.week} regular season"
+
+        # Playoff games (weeks 15-18)
+        if matchup.match_type == "playoff":
+            # Championship bracket (top 6 teams - places 1-6)
+            if matchup.matchup_id == 1:
+                return "Championship game (1st place)"
+            elif matchup.matchup_id == 2:
+                return "3rd place game (playoff bracket)"
+            elif matchup.week == 15:
+                return "Playoff semifinal"
+            else:
+                return "Playoff game"
+        elif matchup.match_type == "consolation":
+            # Consolation bracket (teams 7-12 - playing for best of the rest)
+            if matchup.matchup_id == 4:
+                return "Consolation championship (7th place game)"
+            elif matchup.matchup_id == 5:
+                return "9th place game (consolation bracket)"
+            else:
+                return "Consolation playoff game"
+        else:
+            return f"Week {matchup.week} matchup"
