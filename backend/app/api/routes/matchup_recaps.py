@@ -281,6 +281,7 @@ async def get_newsletter_recaps(
 async def regenerate_recaps(
     week: int,
     season: Optional[int] = None,
+    force: bool = Query(False, description="Force regeneration even during offseason"),
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
@@ -293,11 +294,24 @@ async def regenerate_recaps(
     if token != settings.CRON_SECRET:
         raise HTTPException(status_code=403, detail="Invalid credentials")
 
+    # Get NFL state to check season status
+    from app.services.sleeper_client import SleeperClient
+    client = SleeperClient()
+    nfl_state = await client.get_nfl_state()
+    season_type = nfl_state.get("season_type", "regular")
+    current_week = nfl_state.get("week", 0)
+
+    # Block recap regeneration during offseason unless forced
+    if not force and (season_type == "off" or current_week == 0):
+        return {
+            "status": "skipped",
+            "message": "Recap generation skipped - NFL is in offseason. Use ?force=true to override.",
+            "week": week,
+            "season": season
+        }
+
     # Get season
     if season is None:
-        from app.services.sleeper_client import SleeperClient
-        client = SleeperClient()
-        nfl_state = await client.get_nfl_state()
         season = nfl_state.get("season")
 
     result = await db.execute(
@@ -325,6 +339,7 @@ async def regenerate_predictions(
     week: int,
     season: Optional[int] = None,
     regenerate: bool = Query(True, description="Force regenerate existing predictions"),
+    force: bool = Query(False, description="Force generation even during offseason"),
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
@@ -337,11 +352,24 @@ async def regenerate_predictions(
     if token != settings.CRON_SECRET:
         raise HTTPException(status_code=403, detail="Invalid credentials")
 
+    # Get NFL state to check season status
+    from app.services.sleeper_client import SleeperClient
+    client = SleeperClient()
+    nfl_state = await client.get_nfl_state()
+    season_type = nfl_state.get("season_type", "regular")
+    current_week = nfl_state.get("week", 0)
+
+    # Block prediction regeneration during offseason unless forced
+    if not force and (season_type == "off" or current_week == 0):
+        return {
+            "status": "skipped",
+            "message": "Prediction generation skipped - NFL is in offseason. Use ?force=true to override.",
+            "week": week,
+            "season": season
+        }
+
     # Get season
     if season is None:
-        from app.services.sleeper_client import SleeperClient
-        client = SleeperClient()
-        nfl_state = await client.get_nfl_state()
         season = nfl_state.get("season")
 
     result = await db.execute(
