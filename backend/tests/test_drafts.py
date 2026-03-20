@@ -1,8 +1,12 @@
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
 from tests.conftest import (
     create_league, create_season, create_user, create_roster,
     create_draft, create_draft_pick, create_player,
 )
+
+# Patch sleeper_client.get_traded_picks for all /drafts/current tests
+TRADED_PICKS_PATH = "app.api.routes.drafts.sleeper_client.get_traded_picks"
 
 
 async def test_get_all_drafts_success(client, db_session):
@@ -119,7 +123,8 @@ async def test_draft_pick_without_roster_user(client, db_session):
     assert "owner_display_name" not in pick
 
 
-async def test_get_current_draft_returns_latest(client, db_session):
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock, return_value=[])
+async def test_get_current_draft_returns_latest(mock_tp, client, db_session):
     league = await create_league(db_session)
     s2023 = await create_season(db_session, league, year=2023)
     s2024 = await create_season(db_session, league, year=2024)
@@ -137,7 +142,8 @@ async def test_get_current_draft_returns_latest(client, db_session):
     assert data["start_time"] == "2024-08-25T19:00:00"
 
 
-async def test_get_current_draft_no_start_time(client, db_session):
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock, return_value=[])
+async def test_get_current_draft_no_start_time(mock_tp, client, db_session):
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2025)
     await create_draft(db_session, season, id="d2025", year=2025, status="pre_draft")
@@ -150,7 +156,8 @@ async def test_get_current_draft_no_start_time(client, db_session):
     assert data["start_time"] is None
 
 
-async def test_get_current_draft_empty(client):
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock, return_value=[])
+async def test_get_current_draft_empty(mock_tp, client):
     response = await client.get("/api/drafts/current")
     assert response.status_code == 200
     assert response.json() is None
@@ -170,7 +177,8 @@ async def test_get_all_drafts_includes_start_time(client, db_session):
     assert draft["start_time"] == "2024-08-25T19:00:00"
 
 
-async def test_get_current_draft_with_draft_order(client, db_session):
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock, return_value=[])
+async def test_get_current_draft_with_draft_order(mock_tp, client, db_session):
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2025)
     u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
@@ -187,16 +195,20 @@ async def test_get_current_draft_with_draft_order(client, db_session):
     data = response.json()
     order = data["draft_order"]
     assert len(order) == 2
-    # Slot 1 → roster 2 → Bob
+    # Slot 1 → roster 2 → Bob (not traded)
     assert order[0]["slot"] == 1
     assert order[0]["display_name"] == "Bob"
     assert order[0]["avatar"] == "av2"
+    assert order[0]["is_traded"] is False
+    assert order[0]["original_owner_name"] is None
     # Slot 2 → roster 1 → Team Alpha (team_name takes priority)
     assert order[1]["slot"] == 2
     assert order[1]["display_name"] == "Team Alpha"
+    assert order[1]["is_traded"] is False
 
 
-async def test_get_current_draft_empty_draft_order(client, db_session):
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock, return_value=[])
+async def test_get_current_draft_empty_draft_order(mock_tp, client, db_session):
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2025)
     await create_draft(db_session, season, id="d2025", year=2025, status="pre_draft")
@@ -204,3 +216,80 @@ async def test_get_current_draft_empty_draft_order(client, db_session):
     response = await client.get("/api/drafts/current")
     assert response.status_code == 200
     assert response.json()["draft_order"] == []
+
+
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock)
+async def test_get_current_draft_traded_pick(mock_tp, client, db_session):
+    """When a first-round pick is traded, show the new owner with original owner noted."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
+    u2 = await create_user(db_session, id="u2", display_name="Bob", avatar="av2")
+    u3 = await create_user(db_session, id="u3", display_name="Charlie", avatar="av3")
+    await create_roster(db_session, season, u1, roster_id=1)
+    await create_roster(db_session, season, u2, roster_id=2)
+    await create_roster(db_session, season, u3, roster_id=3)
+    # Draft order: slot 1 = roster 1 (Alice), slot 2 = roster 2 (Bob), slot 3 = roster 3 (Charlie)
+    await create_draft(
+        db_session, season, id="d2025", year=2025, status="pre_draft",
+        draft_order={"1": 1, "2": 2, "3": 3}
+    )
+
+    # Simulate: roster 2 (Bob) traded their 1st round pick to roster 3 (Charlie)
+    mock_tp.return_value = [
+        {"season": "2025", "round": 1, "roster_id": 2, "previous_owner_id": 2, "owner_id": 3},
+    ]
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    order = response.json()["draft_order"]
+    assert len(order) == 3
+
+    # Slot 1: Alice's pick, not traded
+    assert order[0]["display_name"] == "Test Team"  # roster team_name default
+    assert order[0]["is_traded"] is False
+    assert order[0]["original_owner_name"] is None
+
+    # Slot 2: Originally Bob's pick, traded to Charlie
+    assert order[1]["display_name"] == "Test Team"  # Charlie's team_name
+    assert order[1]["is_traded"] is True
+    assert order[1]["original_owner_name"] == "Test Team"  # Bob's team_name
+
+    # Slot 3: Charlie's own pick, not traded
+    assert order[2]["is_traded"] is False
+
+
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock)
+async def test_get_current_draft_traded_pick_with_distinct_names(mock_tp, client, db_session):
+    """Verify traded pick shows correct owner names when team_name differs."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
+    u2 = await create_user(db_session, id="u2", display_name="Bob", avatar="av2")
+    await create_roster(db_session, season, u1, roster_id=1, team_name="Team Alpha")
+    await create_roster(db_session, season, u2, roster_id=2, team_name="Team Beta")
+    await create_draft(
+        db_session, season, id="d2025", year=2025, status="pre_draft",
+        draft_order={"1": 1, "2": 2}
+    )
+
+    # Alice traded her pick to Bob
+    mock_tp.return_value = [
+        {"season": "2025", "round": 1, "roster_id": 1, "previous_owner_id": 1, "owner_id": 2},
+    ]
+
+    response = await client.get("/api/drafts/current")
+    assert response.status_code == 200
+    order = response.json()["draft_order"]
+
+    # Slot 1: Originally Alice's, now Bob's
+    assert order[0]["slot"] == 1
+    assert order[0]["display_name"] == "Team Beta"
+    assert order[0]["avatar"] == "av2"
+    assert order[0]["is_traded"] is True
+    assert order[0]["original_owner_name"] == "Team Alpha"
+
+    # Slot 2: Bob's own pick, not traded
+    assert order[1]["slot"] == 2
+    assert order[1]["display_name"] == "Team Beta"
+    assert order[1]["is_traded"] is False

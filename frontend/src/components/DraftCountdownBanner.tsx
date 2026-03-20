@@ -6,6 +6,8 @@ interface DraftOrderEntry {
   slot: number;
   display_name: string;
   avatar: string | null;
+  is_traded: boolean;
+  original_owner_name: string | null;
 }
 
 interface CurrentDraft {
@@ -112,7 +114,12 @@ function DraftOrderModal({ draftOrder, year, onClose }: { draftOrder: DraftOrder
                     className="w-7 h-7 rounded-full shrink-0"
                   />
                 )}
-                <span className="text-sm font-medium text-gray-900">{entry.display_name}</span>
+                <span className="text-sm font-medium text-gray-900">
+                  {entry.display_name}
+                  {entry.is_traded && entry.original_owner_name && (
+                    <span className="text-xs text-gray-500 ml-1">(from {entry.original_owner_name})</span>
+                  )}
+                </span>
               </li>
             ))}
           </ol>
