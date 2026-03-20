@@ -49,8 +49,6 @@ async def get_taxi_squads(db: AsyncSession = Depends(get_db)):
     teams = []
     for roster, user in roster_rows:
         taxi = roster.taxi or []
-        if not taxi:
-            continue
 
         players = []
         for pid in taxi:
