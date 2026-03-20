@@ -115,23 +115,31 @@ export default function TaxiSquads() {
                   </tr>
                 </thead>
                 <tbody>
-                  {team.players.map((player) => (
-                    <tr key={player.player_id} className="border-b last:border-b-0 hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm font-medium">{player.full_name}</td>
-                      <td className="px-4 py-2 text-center">
-                        {player.position ? (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${getPositionColor(player.position)}`}>
-                            {player.position}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">--</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-center text-sm text-gray-600">
-                        {player.team || '--'}
+                  {team.players.length > 0 ? (
+                    team.players.map((player) => (
+                      <tr key={player.player_id} className="border-b last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="px-4 py-2 text-sm font-medium">{player.full_name}</td>
+                        <td className="px-4 py-2 text-center">
+                          {player.position ? (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${getPositionColor(player.position)}`}>
+                              {player.position}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">--</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-center text-sm text-gray-600">
+                          {player.team || '--'}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="border-b">
+                      <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500 italic">
+                        No players on taxi squad
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
