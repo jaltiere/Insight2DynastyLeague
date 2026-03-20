@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
 from app.models import Draft, DraftPick, Player, Roster, Season, User
+from app.services.sleeper_client import sleeper_client
 from collections import Counter
 from typing import List, Dict, Any
 
@@ -45,18 +46,36 @@ async def get_current_draft(db: AsyncSession = Depends(get_db)):
     if not draft:
         return None
 
-    # Resolve draft order to owner names
+    # Resolve draft order to owner names, accounting for traded picks
     draft_order_list = []
     raw_order = draft.draft_order or {}
     if raw_order:
         roster_ids = [rid for rid in raw_order.values() if rid]
+
+        # Fetch traded picks from Sleeper to find current first-round pick owners
+        try:
+            traded_picks = await sleeper_client.get_traded_picks()
+        except Exception:
+            traded_picks = []
+
+        # Build lookup: original_roster_id -> current_owner_roster_id for round 1
+        traded_r1 = {}
+        for tp in traded_picks:
+            if str(tp.get("season")) == str(draft.year) and tp.get("round") == 1:
+                traded_r1[tp["roster_id"]] = tp["owner_id"]
+
+        # Collect ALL roster_ids we need to resolve (original + traded owners)
+        all_roster_ids = set(roster_ids)
+        for owner_id in traded_r1.values():
+            all_roster_ids.add(owner_id)
+
         roster_to_owner = {}
-        if roster_ids:
+        if all_roster_ids:
             result = await db.execute(
                 select(Roster, User)
                 .join(User, Roster.user_id == User.id)
                 .join(Season, Roster.season_id == Season.id)
-                .where(Roster.roster_id.in_(roster_ids), Season.year == draft.year)
+                .where(Roster.roster_id.in_(list(all_roster_ids)), Season.year == draft.year)
             )
             for roster, user in result.all():
                 roster_to_owner[roster.roster_id] = {
@@ -65,13 +84,28 @@ async def get_current_draft(db: AsyncSession = Depends(get_db)):
                 }
 
         for slot in sorted(raw_order.keys(), key=lambda s: int(s)):
-            roster_id = raw_order[slot]
-            owner = roster_to_owner.get(roster_id)
-            draft_order_list.append({
-                "slot": int(slot),
-                "display_name": owner["display_name"] if owner else f"Team {slot}",
-                "avatar": owner["avatar"] if owner else None,
-            })
+            original_roster_id = raw_order[slot]
+            original_owner = roster_to_owner.get(original_roster_id)
+
+            # Check if this pick was traded
+            current_owner_roster_id = traded_r1.get(original_roster_id)
+            if current_owner_roster_id and current_owner_roster_id != original_roster_id:
+                current_owner = roster_to_owner.get(current_owner_roster_id)
+                draft_order_list.append({
+                    "slot": int(slot),
+                    "display_name": current_owner["display_name"] if current_owner else f"Team {slot}",
+                    "avatar": current_owner["avatar"] if current_owner else None,
+                    "is_traded": True,
+                    "original_owner_name": original_owner["display_name"] if original_owner else f"Team {slot}",
+                })
+            else:
+                draft_order_list.append({
+                    "slot": int(slot),
+                    "display_name": original_owner["display_name"] if original_owner else f"Team {slot}",
+                    "avatar": original_owner["avatar"] if original_owner else None,
+                    "is_traded": False,
+                    "original_owner_name": None,
+                })
 
     return {
         "draft_id": draft.id,
