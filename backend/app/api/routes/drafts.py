@@ -144,6 +144,35 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         [rid for rid in draft_order.values() if rid]
     ))
 
+    # For incomplete drafts, fetch traded picks to show current owners
+    traded_picks_by_slot: Dict[int, int] = {}
+    if draft.status != "complete" and draft_order:
+        try:
+            traded_picks = await sleeper_client.get_traded_picks()
+            # Build lookup: original_roster_id -> current_owner_roster_id for this draft year
+            for tp in traded_picks:
+                if str(tp.get("season")) == str(draft.year):
+                    round_num = tp.get("round")
+                    if round_num:
+                        # Map original roster_id to current owner_id for all rounds
+                        original_rid = tp["roster_id"]
+                        current_owner_rid = tp["owner_id"]
+                        # Find which slot this original roster_id corresponds to
+                        for slot_str, rid in draft_order.items():
+                            if rid == original_rid:
+                                slot_num = int(slot_str)
+                                # Store the current owner for this slot (per round)
+                                key = (slot_num, round_num)
+                                traded_picks_by_slot[key] = current_owner_rid
+                                # Also add current owner roster_id to our lookup list
+                                roster_ids.append(current_owner_rid)
+        except Exception as e:
+            # If Sleeper API fails, continue without traded pick info
+            print(f"Error fetching traded picks: {e}")
+
+    # Ensure unique roster_ids
+    roster_ids = list(set(roster_ids))
+
     # Fetch players
     player_map = {}
     if player_ids:
@@ -153,22 +182,23 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         players = result.scalars().all()
         player_map = {p.id: p for p in players}
 
-    # Fetch rosters to get user info
+    # Fetch rosters to get user info (filter by season year)
     roster_to_user = {}
     if roster_ids:
         result = await db.execute(
             select(Roster, User)
             .join(User, Roster.user_id == User.id)
-            .where(Roster.roster_id.in_(roster_ids))
+            .join(Season, Roster.season_id == Season.id)
+            .where(Roster.roster_id.in_(roster_ids), Season.year == draft.year)
         )
         for roster, user in result.all():
             roster_to_user[roster.roster_id] = {
                 "user_id": user.id,
-                "display_name": user.display_name or user.username,
+                "display_name": roster.team_name or user.display_name or user.username,
                 "avatar": user.avatar
             }
 
-    # Build slot_owners map from draft_order, or derive from picks if empty
+    # Build slot_owners map from draft_order (always original owners)
     slot_owners = {}
     if draft_order:
         for slot, roster_id in draft_order.items():
@@ -208,13 +238,21 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
     picks_list = []
     for pick in picks:
         player = player_map.get(pick.player_id)
-        owner = roster_to_user.get(pick.roster_id)
+
+        # For incomplete drafts, check if this pick was traded
+        effective_roster_id = pick.roster_id
+        if draft.status != "complete" and traded_picks_by_slot:
+            key = (pick.pick_in_round, pick.round)
+            if key in traded_picks_by_slot:
+                effective_roster_id = traded_picks_by_slot[key]
+
+        owner = roster_to_user.get(effective_roster_id)
 
         pick_data = {
             "pick_no": pick.pick_no,
             "round": pick.round,
             "pick_in_round": pick.pick_in_round,
-            "roster_id": pick.roster_id,
+            "roster_id": effective_roster_id,
             "player_id": pick.player_id,
         }
 
@@ -235,6 +273,22 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
 
         picks_list.append(pick_data)
 
+    # For incomplete drafts, build current_pick_owners map showing who owns each slot
+    current_pick_owners = {}
+    if draft.status != "complete" and draft_order:
+        for slot_str, original_roster_id in draft_order.items():
+            slot_num = int(slot_str)
+            for round_num in range(1, draft.rounds + 1):
+                key = f"{slot_num}_{round_num}"
+                # Check if this pick was traded
+                traded_rid = traded_picks_by_slot.get((slot_num, round_num))
+                current_roster_id = traded_rid if traded_rid else original_roster_id
+
+                # Get owner info for current holder
+                current_owner = roster_to_user.get(current_roster_id)
+                if current_owner:
+                    current_pick_owners[key] = current_owner
+
     return {
         "draft_id": draft.id,
         "year": draft.year,
@@ -243,6 +297,7 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         "rounds": draft.rounds,
         "draft_order": draft_order,
         "slot_owners": slot_owners,
+        "current_pick_owners": current_pick_owners if current_pick_owners else None,
         "total_picks": len(picks_list),
         "picks": picks_list
     }
