@@ -42,6 +42,7 @@ interface DraftDetail {
   rounds: number;
   draft_order: Record<string, number>;
   slot_owners: Record<string, SlotOwner>;
+  current_pick_owners?: Record<string, SlotOwner> | null;
   total_picks: number;
   picks: DraftPick[];
 }
@@ -234,7 +235,29 @@ export default function Drafts() {
                     </td>
                     {slots.map((slot) => {
                       const pick = grid[round]?.[Number(slot)];
+                      const draftOrderMap = draftDetail.draft_order || {};
+                      const slotOwner = slotOwnerMap[slot];
+
+                      // For incomplete drafts, check if this slot has a current owner (after trades)
+                      const currentPickOwners = draftDetail.current_pick_owners;
+                      const currentOwnerKey = `${slot}_${round}`;
+                      const currentOwner = currentPickOwners?.[currentOwnerKey];
+                      const isSlotTraded = currentOwner && currentOwner.user_id !== slotOwner?.user_id;
+
                       if (!pick) {
+                        // Empty slot - for incomplete drafts, show current owner if traded
+                        if (draftDetail.status !== 'complete' && currentOwner && isSlotTraded) {
+                          return (
+                            <td key={slot} className="p-0.5">
+                              <div className="bg-gray-50 border border-gray-200 rounded p-1 h-full min-h-[48px] flex flex-col justify-center">
+                                <div className="inline-flex items-center gap-0.5 rounded-sm px-1 py-px bg-black/20 dark:bg-yellow-400/80 dark:text-black self-start">
+                                  <span className="text-[8px] font-bold">&rarr;</span>
+                                  <span className="text-[8px] font-semibold truncate">{currentOwner.display_name}</span>
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        }
                         return (
                           <td key={slot} className="p-0.5">
                             <div className="bg-gray-50 border border-gray-200 rounded p-1 h-full min-h-[48px]" />
@@ -243,7 +266,6 @@ export default function Drafts() {
                       }
 
                       const posColor = getPositionColor(pick.position);
-                      const draftOrderMap = draftDetail.draft_order || {};
                       const originalRosterId = draftOrderMap[String(pick.pick_in_round)];
                       const isTraded = originalRosterId !== undefined && pick.roster_id !== originalRosterId;
 

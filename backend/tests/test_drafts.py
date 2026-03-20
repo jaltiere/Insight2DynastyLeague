@@ -37,7 +37,7 @@ async def test_get_draft_by_year_success(client, db_session):
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2024)
     user = await create_user(db_session, id="u1", display_name="Owner One", avatar="abc123")
-    roster = await create_roster(db_session, season, user, roster_id=1)
+    roster = await create_roster(db_session, season, user, roster_id=1, team_name="Team Alpha")
     player = await create_player(db_session, id="p1", full_name="Patrick Mahomes", position="QB", team="KC")
     draft = await create_draft(db_session, season, draft_order={"1": 1})
     await create_draft_pick(db_session, draft, pick_no=1, round=1, pick_in_round=1, roster_id=roster.roster_id, player_id=player.id)
@@ -49,13 +49,13 @@ async def test_get_draft_by_year_success(client, db_session):
     assert data["total_picks"] == 1
     assert data["draft_order"] == {"1": 1}
     assert "slot_owners" in data
-    assert data["slot_owners"]["1"]["display_name"] == "Owner One"
+    assert data["slot_owners"]["1"]["display_name"] == "Team Alpha"
     assert data["slot_owners"]["1"]["avatar"] == "abc123"
     pick = data["picks"][0]
     assert pick["pick_no"] == 1
     assert pick["player_name"] == "Patrick Mahomes"
     assert pick["position"] == "QB"
-    assert pick["owner_display_name"] == "Owner One"
+    assert pick["owner_display_name"] == "Team Alpha"
 
 
 async def test_get_draft_by_year_not_found(client):
@@ -97,13 +97,13 @@ async def test_slot_owners_fallback_for_unknown_roster(client, db_session):
     season = await create_season(db_session, league, year=2024)
     draft = await create_draft(db_session, season, draft_order={"1": 1, "2": 999})
     user = await create_user(db_session, id="u1", display_name="Owner One")
-    await create_roster(db_session, season, user, roster_id=1)
+    await create_roster(db_session, season, user, roster_id=1, team_name="Team Alpha")
 
     response = await client.get("/api/drafts/2024")
     assert response.status_code == 200
     data = response.json()
-    # Slot 1 has a known owner
-    assert data["slot_owners"]["1"]["display_name"] == "Owner One"
+    # Slot 1 has a known owner (team_name takes priority)
+    assert data["slot_owners"]["1"]["display_name"] == "Team Alpha"
     # Slot 2 has unknown roster, falls back to "Team 2"
     assert data["slot_owners"]["2"]["display_name"] == "Team 2"
     assert data["slot_owners"]["2"]["user_id"] is None
@@ -293,3 +293,80 @@ async def test_get_current_draft_traded_pick_with_distinct_names(mock_tp, client
     assert order[1]["slot"] == 2
     assert order[1]["display_name"] == "Team Beta"
     assert order[1]["is_traded"] is False
+
+
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock)
+async def test_get_draft_by_year_incomplete_shows_current_owners_in_boxes(mock_tp, client, db_session):
+    """For incomplete drafts, slot_owners show original owners, current_pick_owners show traded owners."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2025)
+    u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
+    u2 = await create_user(db_session, id="u2", display_name="Bob", avatar="av2")
+    u3 = await create_user(db_session, id="u3", display_name="Charlie", avatar="av3")
+    await create_roster(db_session, season, u1, roster_id=1, team_name="Team Alpha")
+    await create_roster(db_session, season, u2, roster_id=2, team_name="Team Beta")
+    await create_roster(db_session, season, u3, roster_id=3, team_name="Team Gamma")
+
+    # Draft order: slot 1 = roster 1 (Alice), slot 2 = roster 2 (Bob), slot 3 = roster 3 (Charlie)
+    draft = await create_draft(
+        db_session, season, id="d2025", year=2025, status="pre_draft",
+        draft_order={"1": 1, "2": 2, "3": 3}, rounds=3
+    )
+
+    # Simulate: Alice (roster 1) traded her round 1 pick to Bob (roster 2)
+    mock_tp.return_value = [
+        {"season": "2025", "round": 1, "roster_id": 1, "previous_owner_id": 1, "owner_id": 2},
+    ]
+
+    response = await client.get("/api/drafts/2025")
+    assert response.status_code == 200
+    data = response.json()
+
+    # slot_owners should ALWAYS show ORIGINAL owners (column headers)
+    assert data["slot_owners"]["1"]["display_name"] == "Team Alpha"
+    assert data["slot_owners"]["1"]["avatar"] == "av1"
+    assert data["slot_owners"]["2"]["display_name"] == "Team Beta"
+    assert data["slot_owners"]["3"]["display_name"] == "Team Gamma"
+
+    # current_pick_owners should show who actually owns each pick
+    assert "current_pick_owners" in data
+    assert data["current_pick_owners"] is not None
+    # Slot 1, Round 1: Traded to Bob
+    assert data["current_pick_owners"]["1_1"]["display_name"] == "Team Beta"
+    # Slot 1, Round 2: Not traded, still Alice
+    assert data["current_pick_owners"]["1_2"]["display_name"] == "Team Alpha"
+    # Slot 2, Round 1: Bob's own pick
+    assert data["current_pick_owners"]["2_1"]["display_name"] == "Team Beta"
+
+
+@patch(TRADED_PICKS_PATH, new_callable=AsyncMock)
+async def test_get_draft_by_year_complete_no_current_pick_owners(mock_tp, client, db_session):
+    """For complete drafts, slot_owners show original owners and no current_pick_owners returned."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    u1 = await create_user(db_session, id="u1", display_name="Alice", avatar="av1")
+    u2 = await create_user(db_session, id="u2", display_name="Bob", avatar="av2")
+    await create_roster(db_session, season, u1, roster_id=1, team_name="Team Alpha")
+    await create_roster(db_session, season, u2, roster_id=2, team_name="Team Beta")
+
+    draft = await create_draft(
+        db_session, season, id="d2024", year=2024, status="complete",
+        draft_order={"1": 1, "2": 2}
+    )
+
+    # Even if traded picks exist, they should be ignored for complete drafts
+    mock_tp.return_value = [
+        {"season": "2024", "round": 1, "roster_id": 1, "previous_owner_id": 1, "owner_id": 2},
+    ]
+
+    response = await client.get("/api/drafts/2024")
+    assert response.status_code == 200
+    data = response.json()
+
+    # slot_owners should show ORIGINAL owners
+    assert data["slot_owners"]["1"]["display_name"] == "Team Alpha"
+    assert data["slot_owners"]["1"]["avatar"] == "av1"
+    assert data["slot_owners"]["2"]["display_name"] == "Team Beta"
+
+    # Complete drafts should not have current_pick_owners
+    assert data["current_pick_owners"] is None
