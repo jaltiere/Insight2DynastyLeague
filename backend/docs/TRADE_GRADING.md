@@ -2,7 +2,7 @@
 
 ## Overview
 
-The trade grading system evaluates completed trades by analyzing the **actual performance** of all assets exchanged (players and draft picks) after the trade date. Each side receives a letter grade (A+ through F) based on their share of the total value generated.
+The trade grading system evaluates completed trades by analyzing the **actual performance** of all assets exchanged (players and draft picks) after the trade date. Each side receives a letter grade (A+ through F) based on their share of the total value generated, subject to caps and anomaly detection described below.
 
 **Key Principle**: Grades are retrospective, not predictive. We measure what actually happened, not what was expected at the time of the trade.
 
@@ -32,6 +32,59 @@ The grading scale is centered around 50% value share (a fair trade) to create a 
 - **55/45 split**: B vs C+ (slightly favors one side)
 - **50/50 split**: B- vs B- (perfectly fair)
 - **70/30 split**: A+ vs D+ (clearly lopsided)
+
+> **Note**: These are the raw share-based grades. The final grade may be lower due to the absolute value cap described below.
+
+## Anomaly Detection
+
+If any side of a trade received **no assets at all** (no players and no picks), the trade is flagged as an anomaly and **no grade is assigned**.
+
+- All sides receive `"grade": "N/A"`
+- The response includes `"anomaly": true`
+- These trades appear at the bottom of the lopsided sort regardless of their lopsidedness score
+
+This handles commissioner corrections, administrative transactions, or data errors where Sleeper recorded a one-sided transfer.
+
+## Absolute Value Cap
+
+A lopsided percentage split is only meaningful when the underlying assets are worth something. Two players who never score still produce a 70/30 split — but calling that an "A+" misrepresents the trade.
+
+The maximum achievable grade is capped based on each side's **absolute weighted value received**:
+
+| Side's Total Value | Maximum Grade |
+|--------------------|---------------|
+| < 25 weighted pts  | C             |
+| 25 – 74            | B-            |
+| 75 – 149           | B             |
+| 150 – 249          | B+            |
+| 250+               | No cap (A grades possible) |
+
+The cap is applied per side independently. A side that received 300+ weighted points is eligible for any grade; a side that received 10 points cannot earn above a C regardless of their value share.
+
+### Example
+
+**Trade**: Player X (scores 4 pts total) for Player Y (scores 2 pts total)
+- Side A value share: 4/6 = 67% → raw grade: A
+- Side A cap (4 weighted pts < 25): max grade = **C**
+- **Final grade: C** — the trade barely mattered
+
+## Sort Order
+
+### Lopsided (default)
+
+Trades are sorted by winner's actual (capped) grade descending, with raw lopsidedness as a tiebreaker. This ensures:
+
+- A+ trades (high value, high share) appear first
+- Capped C/B trades appear lower even if their share was 95%
+- Anomalies (N/A) always appear last
+
+### Recent
+
+Sorted by trade date descending. Anomalies sort by date normally.
+
+### Even
+
+Sorted by lopsidedness ascending (most balanced first). Since anomalies have lopsidedness ≈ 1.0, they naturally sink to the bottom.
 
 ## Algorithm Components
 
@@ -202,7 +255,16 @@ for pick in picks_received:
     side_value += pick_value
 ```
 
-#### Step 2: Compute Value Share
+#### Step 2: Anomaly Check
+
+```python
+if any side received no players and no picks:
+    mark trade as anomaly
+    set all grades to "N/A"
+    return early
+```
+
+#### Step 3: Compute Value Share
 
 ```python
 total_trade_value = sum(side_value for all sides)
@@ -211,11 +273,12 @@ for each side:
     value_share = side_value / total_trade_value
 ```
 
-#### Step 3: Assign Letter Grade
+#### Step 4: Assign Letter Grade with Cap
 
 ```python
-grade = lookup_grade(value_share)
-  # Using the grading scale table above
+raw_grade = lookup_grade(value_share)       # from grading scale table
+cap = max_grade_for_value(side_value)       # from absolute value cap table
+final_grade = min(raw_grade, cap)           # cap is an upper bound only
 ```
 
 ## Data Requirements
@@ -262,7 +325,7 @@ For accurate grading, the algorithm requires:
 
 **Supported**: The algorithm handles N-sided trades.
 
-**Grading**: Each team gets a grade based on their value share.
+**Grading**: Each team gets a grade based on their value share, subject to the same cap rules.
 
 **Example 3-team trade**:
 - Team A: 50% share → B grade
@@ -287,6 +350,7 @@ For accurate grading, the algorithm requires:
   "date": 1700000000000,
   "weeks_of_data": 23,
   "lopsidedness": 0.2500,
+  "anomaly": false,
   "sides": [
     {
       "roster_id": 1,
@@ -346,6 +410,20 @@ For accurate grading, the algorithm requires:
 }
 ```
 
+**Anomaly response** (`anomaly: true`):
+```json
+{
+  "trade_id": "txn_99999",
+  "season": 2024,
+  "week": 3,
+  "anomaly": true,
+  "sides": [
+    { "roster_id": 1, "grade": "N/A", "total_value": 180.0, ... },
+    { "roster_id": 2, "grade": "N/A", "total_value": 0.0, ... }
+  ]
+}
+```
+
 ## Implementation Files
 
 - **Service**: `backend/app/services/trade_grading.py`
@@ -367,4 +445,4 @@ Potential improvements to consider:
 ---
 
 **Last Updated**: March 2026
-**Algorithm Version**: 1.0
+**Algorithm Version**: 1.1

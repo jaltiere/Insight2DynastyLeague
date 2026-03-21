@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.database import get_db
-from app.services.trade_grading import TradeGradingService
+from app.services.trade_grading import GRADE_ORDER, TradeGradingService
 
 router = APIRouter()
 
@@ -19,11 +19,27 @@ async def get_trade_grades(
     service = TradeGradingService(db)
     trades = await service.grade_all_trades(season=season, owner_id=owner_id)
 
+    def _winner_grade_rank(trade: dict) -> int:
+        """Rank of the winning side's grade. Anomalies return -1 (sort last)."""
+        ranks = [
+            GRADE_ORDER.index(side["grade"])
+            for side in trade["sides"]
+            if side["grade"] in GRADE_ORDER
+        ]
+        return max(ranks) if ranks else -1
+
     if sort == "lopsided":
-        trades.sort(key=lambda t: t["lopsidedness"], reverse=True)
+        # Sort by winner's actual (capped) grade first, then raw lopsidedness.
+        # Anomalies always sink to the bottom (grade_rank == -1).
+        trades.sort(
+            key=lambda t: (_winner_grade_rank(t), t["lopsidedness"]),
+            reverse=True,
+        )
     elif sort == "recent":
         trades.sort(key=lambda t: t["date"] or 0, reverse=True)
     elif sort == "even":
+        # Anomalies have lopsidedness ≈ 1.0 so they naturally sink to the
+        # bottom of the even (lowest lopsidedness first) sort — no change needed.
         trades.sort(key=lambda t: t["lopsidedness"])
 
     return {"trades": trades}
