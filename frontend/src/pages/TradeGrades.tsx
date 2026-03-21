@@ -25,6 +25,7 @@ const GRADE_COLORS: Record<string, string> = {
   D: 'bg-orange-500 text-white',
   'D-': 'bg-orange-600 text-white',
   F: 'bg-red-600 text-white',
+  'N/A': 'bg-gray-300 text-gray-600',
 };
 
 interface PlayerDetail {
@@ -66,6 +67,7 @@ interface Trade {
   date: number | null;
   weeks_of_data: number;
   lopsidedness: number;
+  anomaly: boolean;
   sides: TradeSide[];
 }
 
@@ -135,6 +137,11 @@ function TradeCard({ trade }: { trade: Trade }) {
           </span>
           <span className="text-xs text-gray-500">{formatDate(trade.date)}</span>
           <span className="text-xs text-gray-400">{trade.weeks_of_data}w of data</span>
+          {trade.anomaly && (
+            <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded font-medium">
+              Ungraded
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {trade.sides.map((side) => (

@@ -124,7 +124,7 @@ async def test_trade_grades_even_trade(client, db_session):
 
 
 async def test_trade_grades_lopsided_trade(client, db_session):
-    """A very lopsided trade should give A-range and D/F-range grades."""
+    """A very lopsided trade should give a strong grade to the winner."""
     season, r1, r2, pa, pb, txn = await _setup_basic_trade(db_session)
 
     # Player A scores big, Player B scores nothing
@@ -138,10 +138,12 @@ async def test_trade_grades_lopsided_trade(client, db_session):
     data = response.json()
     trade = data["trades"][0]
 
+    assert not trade["anomaly"]
     winner = trade["sides"][0]
     loser = trade["sides"][1]
-    assert winner["grade"] in ("A+", "A", "A-", "B+")
-    assert loser["grade"] in ("F", "D-", "D", "D+")
+    # Winner got 187.5 weighted pts (25*1.5*5) — value cap allows up to B+
+    assert winner["grade"] in ("A+", "A", "A-", "B+", "B")
+    assert loser["grade"] in ("F", "D-", "D", "D+", "C-", "C")
 
 
 async def test_trade_grades_bench_weighting(client, db_session):
@@ -443,7 +445,7 @@ async def test_trade_grades_response_fields(client, db_session):
     trade = data["trades"][0]
 
     for key in ["trade_id", "season", "week", "date", "weeks_of_data",
-                "lopsidedness", "sides"]:
+                "lopsidedness", "anomaly", "sides"]:
         assert key in trade, f"Missing key: {key}"
 
     side = trade["sides"][0]
@@ -563,6 +565,64 @@ async def test_trade_grades_owner_filter(client, db_session):
     response = await client.get("/api/trade-grades")
     data = response.json()
     assert len(data["trades"]) == 2
+
+
+async def test_trade_grades_anomaly_one_sided(client, db_session):
+    """A trade where one side receives nothing should be flagged as an anomaly
+    with N/A grades — not a real trade."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    user1 = await create_user(db_session, id="user1", username="owner1", display_name="Owner One")
+    user2 = await create_user(db_session, id="user2", username="owner2", display_name="Owner Two")
+    await create_roster(db_session, season, user1, roster_id=1)
+    await create_roster(db_session, season, user2, roster_id=2)
+    await create_player(db_session, id="pa", full_name="Player A", position="WR")
+
+    # One-sided: roster 1 gives Player A, roster 2 gives nothing
+    await create_transaction(
+        db_session, season,
+        id="trade_anomaly",
+        type="trade",
+        status="complete",
+        week=5,
+        roster_ids=[1, 2],
+        adds={"pa": 2},
+        drops={"pa": 1},
+        picks=None,
+        status_updated=1700000099000,
+    )
+    await db_session.flush()
+
+    response = await client.get("/api/trade-grades")
+    data = response.json()
+    assert len(data["trades"]) == 1
+    trade = data["trades"][0]
+
+    assert trade["anomaly"] is True
+    for side in trade["sides"]:
+        assert side["grade"] == "N/A"
+
+
+async def test_trade_grades_low_value_grade_cap(client, db_session):
+    """A lopsided split on tiny assets should not reach A/B+ grades."""
+    season, r1, r2, pa, pb, txn = await _setup_basic_trade(db_session)
+
+    # Winner gets 3pts starter (4.5 weighted), loser gets 1pt starter (1.5 weighted).
+    # Share ≈ 75% which would normally yield A-, but total value is tiny.
+    await _add_player_points(db_session, season, r2, pa, 6, 3.0, is_starter=True)
+    await _add_player_points(db_session, season, r1, pb, 6, 1.0, is_starter=True)
+    await db_session.flush()
+
+    response = await client.get("/api/trade-grades")
+    data = response.json()
+    trade = data["trades"][0]
+
+    assert not trade["anomaly"]
+    winner = trade["sides"][0]
+    # 4.5 weighted points < 25 threshold → capped at "C"
+    assert winner["grade"] not in ("A+", "A", "A-", "B+", "B", "B-"), (
+        f"Low-value trade winner should be capped, got {winner['grade']}"
+    )
 
 
 async def test_trade_grades_excludes_non_trades(client, db_session):

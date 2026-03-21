@@ -32,6 +32,12 @@ FUTURE_PICK_DISCOUNT = 0.7
 # Replacement-factor window (weeks before/after trade)
 REPLACEMENT_WINDOW = 4
 
+# Ordered from worst to best — used for grade comparisons
+GRADE_ORDER = [
+    "F", "D-", "D", "D+", "C-", "C", "C+",
+    "B-", "B", "B+", "A-", "A", "A+",
+]
+
 
 def _value_share_to_grade(share: float) -> str:
     """Map a 0.0-1.0 value share to a letter grade.
@@ -64,6 +70,34 @@ def _value_share_to_grade(share: float) -> str:
     if share >= 0.20:
         return "D-"
     return "F"
+
+
+def _apply_grade_cap(grade: str, cap: Optional[str]) -> str:
+    """Return the lesser of *grade* and *cap* using GRADE_ORDER ranking."""
+    if cap is None:
+        return grade
+    try:
+        return GRADE_ORDER[min(GRADE_ORDER.index(grade), GRADE_ORDER.index(cap))]
+    except ValueError:
+        return grade
+
+
+def _max_grade_for_value(side_value: float) -> Optional[str]:
+    """Cap the maximum grade achievable based on absolute weighted value received.
+
+    Prevents trades where both assets barely contribute from earning elite
+    grades simply because the split is lopsided.  Returns None when the
+    received value is substantial enough to allow any grade.
+    """
+    if side_value < 25:
+        return "C"
+    if side_value < 75:
+        return "B-"
+    if side_value < 150:
+        return "B"
+    if side_value < 250:
+        return "B+"
+    return None
 
 
 class TradeGradingService:
@@ -751,7 +785,12 @@ class TradeGradingService:
                     "players": player_details,
                     "draft_picks": pick_details,
                 },
+                # Track whether this side received anything at all
+                "_received_assets": bool(data["players_received"] or data["picks_received"]),
             })
+
+        # Anomaly: any side gave assets but received nothing in return
+        is_anomaly = any(not s.pop("_received_assets") for s in sides_output)
 
         # Compute grades
         total_trade_value = sum(s["total_value"] for s in sides_output)
@@ -761,7 +800,12 @@ class TradeGradingService:
             else:
                 share = 1.0 / max(len(sides_output), 1)
             side["value_share"] = round(share, 4)
-            side["grade"] = _value_share_to_grade(share)
+            if is_anomaly:
+                side["grade"] = "N/A"
+            else:
+                raw_grade = _value_share_to_grade(share)
+                cap = _max_grade_for_value(side["total_value"])
+                side["grade"] = _apply_grade_cap(raw_grade, cap)
 
         sides_output.sort(key=lambda s: s["value_share"], reverse=True)
 
@@ -779,5 +823,6 @@ class TradeGradingService:
             "date": txn.status_updated,
             "weeks_of_data": weeks_of_data,
             "lopsidedness": round(lopsidedness, 4),
+            "anomaly": is_anomaly,
             "sides": sides_output,
         }
