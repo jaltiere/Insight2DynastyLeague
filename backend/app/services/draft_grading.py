@@ -30,6 +30,22 @@ from app.models import (
 STARTER_WEIGHT = 1.5
 BENCH_WEIGHT = 0.1
 
+# Round multipliers for rookie drafts only.
+# Later-round picks get more credit (finding a gem is harder);
+# first-round picks get slightly less (they're expected to produce).
+ROOKIE_ROUND_MULTIPLIERS = {
+    1: 0.75,
+    2: 1.00,
+    3: 1.35,
+    4: 1.75,
+}
+ROOKIE_ROUND_MULTIPLIER_DEFAULT = 2.00  # Round 5+
+
+
+def _get_rookie_round_multiplier(round_num: int) -> float:
+    """Return the round-based credit multiplier for rookie drafts."""
+    return ROOKIE_ROUND_MULTIPLIERS.get(round_num, ROOKIE_ROUND_MULTIPLIER_DEFAULT)
+
 
 def _value_share_to_grade(share: float) -> str:
     """Map a 0.0-1.0 value share to a letter grade.
@@ -363,6 +379,10 @@ class DraftGradingService:
                 if info:
                     picks_by_owner[info["user_id"]].append(pick)
 
+        # Rookie drafts use a round-based multiplier: later rounds earn
+        # more credit (steals), earlier rounds earn slightly less (expected).
+        is_rookie_draft = draft.rounds < 20
+
         # Calculate value for each owner
         owner_data: List[dict] = []
         total_value_sum = 0.0
@@ -381,7 +401,14 @@ class DraftGradingService:
                     user_roster_map,
                 )
 
-                total_value += val
+                if is_rookie_draft and pick.round:
+                    round_multiplier = _get_rookie_round_multiplier(pick.round)
+                    adjusted_val = val * round_multiplier
+                else:
+                    round_multiplier = 1.0
+                    adjusted_val = val
+
+                total_value += adjusted_val
                 pick_details.append({
                     "pick_no": pick.pick_no,
                     "round": pick.round,
@@ -389,7 +416,8 @@ class DraftGradingService:
                     "player_name": pinfo.get("full_name", f"Player {pick.player_id}"),
                     "position": pinfo.get("position"),
                     "team": pinfo.get("team"),
-                    "weighted_points": round(val, 2),
+                    "weighted_points": round(adjusted_val, 2),
+                    "round_multiplier": round_multiplier,
                     "starter_weeks": s_wks,
                     "bench_weeks": b_wks,
                     "total_weeks": s_wks + b_wks,
