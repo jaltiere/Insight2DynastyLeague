@@ -80,7 +80,33 @@ player_value = Σ (points × weight)
 - Weeks 9-17: Started, scored 14 pts/week = 14 × 1.5 × 9 = 189
 - Total value = **197 points**
 
-### 2. Draft Value Computation
+### 2. Round Multiplier (Rookie Drafts Only)
+
+For **rookie drafts** (< 20 rounds), each pick's weighted value is further
+adjusted by a round-based multiplier. Later-round picks receive more credit
+because finding a productive player in round 3 or 4 is a genuine steal,
+while round 1 picks are expected to produce.
+
+| Round | Multiplier | Rationale |
+|-------|-----------|-----------|
+| 1 | 0.75x | Expected to produce — slight penalty |
+| 2 | 1.00x | Neutral baseline |
+| 3 | 1.35x | Late-round value is impressive |
+| 4 | 1.75x | Genuine steal territory |
+| 5+ | 2.00x | Maximum bonus — extremely rare finds |
+
+```python
+# Rookie drafts only (draft.rounds < 20)
+adjusted_value = player_value * round_multiplier[pick.round]
+```
+
+**This multiplier is NOT applied to startup drafts** (20+ rounds), where all
+picks have `round_multiplier = 1.0`.
+
+The `round_multiplier` field is included in each pick's response data so
+the UI can display why a pick has a given value.
+
+### 3. Draft Value Computation
 
 For each owner in each draft:
 
@@ -89,10 +115,12 @@ owner_draft_value = 0
 
 for each_pick in owner's_picks:
     player_value = Σ (weighted_points_after_draft)
-    owner_draft_value += player_value
+    # Apply round multiplier for rookie drafts
+    adjusted_value = player_value * round_multiplier (1.0 for startup)
+    owner_draft_value += adjusted_value
 ```
 
-### 3. Average Calculation
+### 4. Average Calculation
 
 Calculate the league average for the draft:
 
@@ -102,7 +130,7 @@ num_owners = count of owners in draft
 average_value = total_value / num_owners
 ```
 
-### 4. Grade Assignment
+### 5. Grade Assignment
 
 Compare each owner to the average:
 
@@ -235,7 +263,8 @@ GET /api/draft-grades?draft_type={type}&owner_id={id}
               "player_name": "Justin Jefferson",
               "position": "WR",
               "team": "MIN",
-              "weighted_points": 425.5,
+              "weighted_points": 319.1,
+              "round_multiplier": 0.75,
               "starter_weeks": 65,
               "bench_weeks": 3,
               "total_weeks": 68
