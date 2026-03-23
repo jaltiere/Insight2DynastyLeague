@@ -312,6 +312,10 @@ ${section('POTENTIAL POINTS', `
   ${potentialRows}
 </table>`)}
 
+<div style="margin-top:32px;padding-top:12px;border-top:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:12px;">
+  <a href="https://www.insight2dynasty.com/" style="color:#2563eb;text-decoration:none;font-weight:bold;">www.insight2dynasty.com</a>
+</div>
+
 </body>
 </html>`;
 }
@@ -728,6 +732,18 @@ export default function Newsletter() {
               ))}
             </tbody>
           </table>
+
+          {/* Footer */}
+          <div className="mt-8 pt-3 border-t border-gray-200 text-center text-xs text-gray-400">
+            <a
+              href="https://www.insight2dynasty.com/"
+              className="text-blue-600 font-bold hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              www.insight2dynasty.com
+            </a>
+          </div>
         </div>
       )}
     </div>
