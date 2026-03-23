@@ -32,6 +32,7 @@ async def get_newsletter_data(
     recaps, upcoming = await _get_recaps(db, season.id, week)
 
     is_regular_season = week <= (season.regular_season_weeks or 14)
+    standings = _build_standings(rosters_map)
 
     return {
         "week": week,
@@ -43,6 +44,7 @@ async def get_newsletter_data(
         "top_players": top_players,
         "season_leaders": season_leaders,
         "rookie_report": rookie_report,
+        "standings": standings,
         "playoff_picture": playoff_picture,
         "potential_points": potential_points,
         "recaps": recaps,
@@ -395,6 +397,27 @@ async def _get_player_owners(
         if row.player_id not in owner_map:
             owner_map[row.player_id] = row.owner_name
     return owner_map
+
+
+def _build_standings(rosters_map: dict[int, dict]) -> list[dict]:
+    """Return all teams sorted by wins desc, then points_for desc."""
+    teams = sorted(
+        rosters_map.values(),
+        key=lambda t: (-t["wins"], -t["points_for"]),
+    )
+    return [
+        {
+            "rank": i + 1,
+            "display_name": t["display_name"],
+            "team_name": t["team_name"],
+            "wins": t["wins"],
+            "losses": t["losses"],
+            "ties": t["ties"],
+            "points_for": t["points_for"],
+            "division": t["division"],
+        }
+        for i, t in enumerate(teams)
+    ]
 
 
 def _build_playoff_picture(rosters_map: dict[int, dict]) -> dict[str, list[dict]]:

@@ -82,7 +82,7 @@ async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data
     required_keys = [
         "week", "season", "is_regular_season", "high_score", "low_score", "league_median",
         "top_players", "season_leaders", "rookie_report",
-        "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
+        "standings", "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
     ]
     for key in required_keys:
         assert key in data, f"Missing key: {key}"
@@ -189,6 +189,22 @@ async def test_newsletter_playoff_picture(client: AsyncClient, base_data):
     # 2 teams total: both go into playoff (we only have 2)
     total = len(picture["playoff"]) + len(picture["consolation"])
     assert total == 2
+
+
+@pytest.mark.anyio
+async def test_newsletter_standings(client: AsyncClient, base_data):
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    standings = data["standings"]
+    assert len(standings) == 2
+    # Alice has more wins so she should be ranked #1
+    assert standings[0]["rank"] == 1
+    assert standings[0]["team_name"] == "Alice's Team"
+    assert standings[0]["wins"] == 8
+    assert standings[0]["losses"] == 4
+    assert standings[0]["points_for"] == 1200.0
+    assert standings[1]["team_name"] == "Bob's Team"
+    assert "division" in standings[0]
 
 
 @pytest.mark.anyio
