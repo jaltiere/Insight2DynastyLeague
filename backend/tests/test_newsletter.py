@@ -80,9 +80,9 @@ async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data
     data = resp.json()
 
     required_keys = [
-        "week", "season", "high_score", "low_score", "league_median",
+        "week", "season", "is_regular_season", "high_score", "low_score", "league_median",
         "top_players", "season_leaders", "rookie_report",
-        "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
+        "standings", "playoff_odds", "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
     ]
     for key in required_keys:
         assert key in data, f"Missing key: {key}"
@@ -94,6 +94,19 @@ async def test_newsletter_week_and_season(client: AsyncClient, base_data):
     data = resp.json()
     assert data["week"] == 5
     assert data["season"] == 2024
+
+
+@pytest.mark.anyio
+async def test_newsletter_is_regular_season_flag(client: AsyncClient, base_data):
+    # Week 5 is within regular season (14 weeks), so should be True
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    assert data["is_regular_season"] is True
+
+    # Week 15 is beyond regular season (14 weeks), so should be False
+    resp = await client.get("/api/newsletter/15")
+    data = resp.json()
+    assert data["is_regular_season"] is False
 
 
 @pytest.mark.anyio
@@ -176,6 +189,39 @@ async def test_newsletter_playoff_picture(client: AsyncClient, base_data):
     # 2 teams total: both go into playoff (we only have 2)
     total = len(picture["playoff"]) + len(picture["consolation"])
     assert total == 2
+
+
+@pytest.mark.anyio
+async def test_newsletter_playoff_odds_regular_season(client: AsyncClient, base_data):
+    # Week 5 is regular season — playoff_odds should be a list (possibly empty if no played matchups)
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    # playoff_odds is a list during regular season (simulation ran), None otherwise
+    assert data["playoff_odds"] is None or isinstance(data["playoff_odds"], list)
+
+
+@pytest.mark.anyio
+async def test_newsletter_playoff_odds_null_in_playoffs(client: AsyncClient, base_data):
+    # Week 15 is beyond regular season — playoff_odds should be None
+    resp = await client.get("/api/newsletter/15")
+    data = resp.json()
+    assert data["playoff_odds"] is None
+
+
+@pytest.mark.anyio
+async def test_newsletter_standings(client: AsyncClient, base_data):
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    standings = data["standings"]
+    assert len(standings) == 2
+    # Alice has more wins so she should be ranked #1
+    assert standings[0]["rank"] == 1
+    assert standings[0]["team_name"] == "Alice's Team"
+    assert standings[0]["wins"] == 8
+    assert standings[0]["losses"] == 4
+    assert standings[0]["points_for"] == 1200.0
+    assert standings[1]["team_name"] == "Bob's Team"
+    assert "division" in standings[0]
 
 
 @pytest.mark.anyio

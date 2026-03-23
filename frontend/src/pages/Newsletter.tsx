@@ -42,6 +42,26 @@ interface RookieEntry {
   owner: string;
 }
 
+interface StandingsEntry {
+  rank: number;
+  display_name: string;
+  team_name: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  points_for: number;
+  division: number;
+}
+
+interface PlayoffOddsEntry {
+  team_name: string;
+  current_record: string;
+  make_playoffs_display: string;
+  win_division_display: string;
+  first_round_bye_display: string;
+  win_finals_display: string;
+}
+
 interface PlayoffEntry {
   seed: number;
   display_name: string;
@@ -72,12 +92,15 @@ interface RecapEntry {
 interface NewsletterData {
   week: number;
   season: number;
+  is_regular_season: boolean;
   high_score: ScoreEntry;
   low_score: ScoreEntry;
   league_median: LeagueMedian;
   top_players: Record<string, PlayerEntry | null>;
   season_leaders: Record<string, SeasonLeader[]>;
   rookie_report: Record<string, RookieEntry[]>;
+  standings: StandingsEntry[];
+  playoff_odds: PlayoffOddsEntry[] | null;
   playoff_picture: { playoff: PlayoffEntry[]; consolation: PlayoffEntry[] };
   potential_points: PotentialEntry[];
   recaps: RecapEntry[];
@@ -172,6 +195,32 @@ function generateEmailHTML(
     .map((e) => `<div>${e.seed}. ${e.display_name} [${record(e)}]</div>`)
     .join('');
 
+  const standingsRows = data.standings
+    .map(
+      (s) =>
+        `<tr>` +
+        `<td style="padding:4px 8px;">${s.rank}.</td>` +
+        `<td style="padding:4px 8px;">${s.team_name}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${s.wins}-${s.losses}${s.ties ? `-${s.ties}` : ''}</td>` +
+        `<td style="padding:4px 8px;text-align:right;">${s.points_for}</td>` +
+        `</tr>`,
+    )
+    .join('');
+
+  const playoffOddsRows = (data.playoff_odds ?? [])
+    .map(
+      (o) =>
+        `<tr>` +
+        `<td style="padding:4px 8px;">${o.team_name}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.current_record}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.make_playoffs_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.win_division_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.first_round_bye_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.win_finals_display}</td>` +
+        `</tr>`,
+    )
+    .join('');
+
   const potentialRows = data.potential_points
     .map(
       (p) =>
@@ -218,7 +267,7 @@ ${section('HIGH SCORE', `<p style="font-size:16px;font-weight:bold;">${data.high
 
 ${section('LOW SCORE', `<p style="font-size:16px;font-weight:bold;">${data.low_score.team_name} — ${data.low_score.points}</p>`)}
 
-${section('LEAGUE MEDIAN', `
+${data.is_regular_season ? section('LEAGUE MEDIAN', `
 <p style="color:#6b7280;margin-bottom:4px;">Median: ${data.league_median.median}</p>
 <table style="width:100%;border-collapse:collapse;">
   <tr style="background-color:${HEADER_BG};color:white;">
@@ -226,11 +275,20 @@ ${section('LEAGUE MEDIAN', `
     <th style="padding:6px 8px;text-align:right;">Score</th>
   </tr>
   ${medianRows}
-</table>`)}
+</table>`) : ''}
 
 ${section('GAME RECAPS', recapText || '<p>[Recaps not yet available]</p>')}
 
-${section('STANDINGS', '<p>[Insert standings screenshot here]</p>')}
+${section('STANDINGS', `
+<table style="width:100%;border-collapse:collapse;">
+  <tr style="background-color:${HEADER_BG};color:white;">
+    <th style="padding:6px 8px;text-align:left;">#</th>
+    <th style="padding:6px 8px;text-align:left;">Team</th>
+    <th style="padding:6px 8px;text-align:center;">Record</th>
+    <th style="padding:6px 8px;text-align:right;">Pts For</th>
+  </tr>
+  ${standingsRows}
+</table>`)}
 
 ${section('TOP PLAYERS (Per Position)', `
 <table style="width:100%;border-collapse:collapse;">
@@ -247,7 +305,18 @@ ${section("THE 1'S", theOnesSection || '<p>[No data yet]</p>')}
 
 ${section('ROOKIE REPORT', rookieSection || '<p>[No rookies yet]</p>')}
 
-${section('PLAYOFF ODDS', '<p>[Insert playoff odds screenshot here]</p>')}
+${data.playoff_odds ? section('PLAYOFF ODDS', `
+<table style="width:100%;border-collapse:collapse;">
+  <tr style="background-color:${HEADER_BG};color:white;">
+    <th style="padding:6px 8px;text-align:left;">Team</th>
+    <th style="padding:6px 8px;text-align:center;">Record</th>
+    <th style="padding:6px 8px;text-align:center;">Make Playoffs</th>
+    <th style="padding:6px 8px;text-align:center;">Win Division</th>
+    <th style="padding:6px 8px;text-align:center;">1st Rd Bye</th>
+    <th style="padding:6px 8px;text-align:center;">Win Championship</th>
+  </tr>
+  ${playoffOddsRows}
+</table>`) : ''}
 
 ${section(`WEEK ${data.week + 1} MATCHUPS`, upcomingText || '<p>[Matchup predictions not yet available]</p>')}
 
@@ -266,6 +335,10 @@ ${section('POTENTIAL POINTS', `
   </tr>
   ${potentialRows}
 </table>`)}
+
+<div style="margin-top:32px;padding-top:12px;border-top:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:12px;">
+  <a href="https://www.insight2dynasty.com/" style="color:#2563eb;text-decoration:none;font-weight:bold;">www.insight2dynasty.com</a>
+</div>
 
 </body>
 </html>`;
@@ -571,9 +644,13 @@ export default function Newsletter() {
             {data.low_score.team_name} — {data.low_score.points}
           </p>
 
-          {/* League Median */}
-          <SectionHeader>LEAGUE MEDIAN</SectionHeader>
-          <MedianTable data={data.league_median} />
+          {/* League Median — regular season only */}
+          {data.is_regular_season && (
+            <>
+              <SectionHeader>LEAGUE MEDIAN</SectionHeader>
+              <MedianTable data={data.league_median} />
+            </>
+          )}
 
           {/* Game Recaps */}
           <SectionHeader>GAME RECAPS</SectionHeader>
@@ -589,7 +666,26 @@ export default function Newsletter() {
 
           {/* Standings */}
           <SectionHeader>STANDINGS</SectionHeader>
-          <p className="text-gray-400 italic">[Insert standings screenshot here]</p>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-blue-600 text-white">
+                <th className="px-3 py-2 text-left">#</th>
+                <th className="px-3 py-2 text-left">Team</th>
+                <th className="px-3 py-2 text-center">Record</th>
+                <th className="px-3 py-2 text-right">Pts For</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.standings.map((s, i) => (
+                <tr key={s.rank} className={i % 2 === 0 ? 'bg-gray-50' : ''}>
+                  <td className="px-3 py-1">{s.rank}.</td>
+                  <td className="px-3 py-1">{s.team_name}</td>
+                  <td className="px-3 py-1 text-center">{s.wins}-{s.losses}{s.ties ? `-${s.ties}` : ''}</td>
+                  <td className="px-3 py-1 text-right font-bold">{s.points_for}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
           {/* Top Players */}
           <SectionHeader>TOP PLAYERS (Per Position)</SectionHeader>
@@ -604,8 +700,35 @@ export default function Newsletter() {
           <RookieSection report={data.rookie_report} />
 
           {/* Playoff Odds */}
-          <SectionHeader>PLAYOFF ODDS</SectionHeader>
-          <p className="text-gray-400 italic">[Insert playoff odds screenshot here]</p>
+          {data.playoff_odds && (
+            <>
+              <SectionHeader>PLAYOFF ODDS</SectionHeader>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-blue-600 text-white">
+                    <th className="px-3 py-2 text-left">Team</th>
+                    <th className="px-3 py-2 text-center">Record</th>
+                    <th className="px-3 py-2 text-center">Make Playoffs</th>
+                    <th className="px-3 py-2 text-center">Win Division</th>
+                    <th className="px-3 py-2 text-center">1st Rd Bye</th>
+                    <th className="px-3 py-2 text-center">Win Championship</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.playoff_odds.map((o, i) => (
+                    <tr key={o.team_name} className={i % 2 === 0 ? 'bg-gray-50' : ''}>
+                      <td className="px-3 py-1">{o.team_name}</td>
+                      <td className="px-3 py-1 text-center">{o.current_record}</td>
+                      <td className="px-3 py-1 text-center font-bold">{o.make_playoffs_display}</td>
+                      <td className="px-3 py-1 text-center">{o.win_division_display}</td>
+                      <td className="px-3 py-1 text-center">{o.first_round_bye_display}</td>
+                      <td className="px-3 py-1 text-center">{o.win_finals_display}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           {/* Next Week Matchups */}
           <SectionHeader>WEEK {data.week + 1} MATCHUPS</SectionHeader>
@@ -643,6 +766,18 @@ export default function Newsletter() {
               ))}
             </tbody>
           </table>
+
+          {/* Footer */}
+          <div className="mt-8 pt-3 border-t border-gray-200 text-center text-xs text-gray-400">
+            <a
+              href="https://www.insight2dynasty.com/"
+              className="text-blue-600 font-bold hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              www.insight2dynasty.com
+            </a>
+          </div>
         </div>
       )}
     </div>
