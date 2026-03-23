@@ -9,6 +9,7 @@ from app.models import (
     Season, Roster, User, Matchup, MatchupPlayerPoint,
     Player, MatchupRecap,
 )
+from app.services.playoff_odds import calculate_playoff_odds
 
 
 async def get_newsletter_data(
@@ -34,6 +35,12 @@ async def get_newsletter_data(
     is_regular_season = week <= (season.regular_season_weeks or 14)
     standings = _build_standings(rosters_map)
 
+    playoff_odds_data = None
+    if is_regular_season:
+        odds_result = await calculate_playoff_odds(db, season.year)
+        if odds_result and odds_result.get("season_started"):
+            playoff_odds_data = odds_result["playoff_odds"]
+
     return {
         "week": week,
         "season": season.year,
@@ -45,6 +52,7 @@ async def get_newsletter_data(
         "season_leaders": season_leaders,
         "rookie_report": rookie_report,
         "standings": standings,
+        "playoff_odds": playoff_odds_data,
         "playoff_picture": playoff_picture,
         "potential_points": potential_points,
         "recaps": recaps,

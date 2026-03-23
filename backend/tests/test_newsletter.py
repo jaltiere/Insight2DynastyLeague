@@ -82,7 +82,7 @@ async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data
     required_keys = [
         "week", "season", "is_regular_season", "high_score", "low_score", "league_median",
         "top_players", "season_leaders", "rookie_report",
-        "standings", "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
+        "standings", "playoff_odds", "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
     ]
     for key in required_keys:
         assert key in data, f"Missing key: {key}"
@@ -189,6 +189,23 @@ async def test_newsletter_playoff_picture(client: AsyncClient, base_data):
     # 2 teams total: both go into playoff (we only have 2)
     total = len(picture["playoff"]) + len(picture["consolation"])
     assert total == 2
+
+
+@pytest.mark.anyio
+async def test_newsletter_playoff_odds_regular_season(client: AsyncClient, base_data):
+    # Week 5 is regular season — playoff_odds should be a list (possibly empty if no played matchups)
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    # playoff_odds is a list during regular season (simulation ran), None otherwise
+    assert data["playoff_odds"] is None or isinstance(data["playoff_odds"], list)
+
+
+@pytest.mark.anyio
+async def test_newsletter_playoff_odds_null_in_playoffs(client: AsyncClient, base_data):
+    # Week 15 is beyond regular season — playoff_odds should be None
+    resp = await client.get("/api/newsletter/15")
+    data = resp.json()
+    assert data["playoff_odds"] is None
 
 
 @pytest.mark.anyio

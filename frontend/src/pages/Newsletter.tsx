@@ -53,6 +53,15 @@ interface StandingsEntry {
   division: number;
 }
 
+interface PlayoffOddsEntry {
+  team_name: string;
+  current_record: string;
+  make_playoffs_display: string;
+  win_division_display: string;
+  first_round_bye_display: string;
+  win_finals_display: string;
+}
+
 interface PlayoffEntry {
   seed: number;
   display_name: string;
@@ -91,6 +100,7 @@ interface NewsletterData {
   season_leaders: Record<string, SeasonLeader[]>;
   rookie_report: Record<string, RookieEntry[]>;
   standings: StandingsEntry[];
+  playoff_odds: PlayoffOddsEntry[] | null;
   playoff_picture: { playoff: PlayoffEntry[]; consolation: PlayoffEntry[] };
   potential_points: PotentialEntry[];
   recaps: RecapEntry[];
@@ -197,11 +207,18 @@ function generateEmailHTML(
     )
     .join('');
 
-  const playoffOddsPlayoff = data.playoff_picture.playoff
-    .map((e) => `<div style="padding:2px 0;">${e.seed}. ${e.team_name} [${record(e)}] ✅</div>`)
-    .join('');
-  const playoffOddsConsolation = data.playoff_picture.consolation
-    .map((e) => `<div style="padding:2px 0;">${e.seed}. ${e.team_name} [${record(e)}] ❌</div>`)
+  const playoffOddsRows = (data.playoff_odds ?? [])
+    .map(
+      (o) =>
+        `<tr>` +
+        `<td style="padding:4px 8px;">${o.team_name}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.current_record}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.make_playoffs_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.win_division_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.first_round_bye_display}</td>` +
+        `<td style="padding:4px 8px;text-align:center;">${o.win_finals_display}</td>` +
+        `</tr>`,
+    )
     .join('');
 
   const potentialRows = data.potential_points
@@ -288,11 +305,18 @@ ${section("THE 1'S", theOnesSection || '<p>[No data yet]</p>')}
 
 ${section('ROOKIE REPORT', rookieSection || '<p>[No rookies yet]</p>')}
 
-${section('PLAYOFF ODDS', `
-<p style="font-weight:bold;margin-bottom:4px;">In the Playoffs:</p>
-${playoffOddsPlayoff}
-<p style="font-weight:bold;margin-top:8px;margin-bottom:4px;">Out of the Playoffs:</p>
-${playoffOddsConsolation}`)}
+${data.playoff_odds ? section('PLAYOFF ODDS', `
+<table style="width:100%;border-collapse:collapse;">
+  <tr style="background-color:${HEADER_BG};color:white;">
+    <th style="padding:6px 8px;text-align:left;">Team</th>
+    <th style="padding:6px 8px;text-align:center;">Record</th>
+    <th style="padding:6px 8px;text-align:center;">Make Playoffs</th>
+    <th style="padding:6px 8px;text-align:center;">Win Division</th>
+    <th style="padding:6px 8px;text-align:center;">1st Rd Bye</th>
+    <th style="padding:6px 8px;text-align:center;">Win Championship</th>
+  </tr>
+  ${playoffOddsRows}
+</table>`) : ''}
 
 ${section(`WEEK ${data.week + 1} MATCHUPS`, upcomingText || '<p>[Matchup predictions not yet available]</p>')}
 
@@ -676,25 +700,35 @@ export default function Newsletter() {
           <RookieSection report={data.rookie_report} />
 
           {/* Playoff Odds */}
-          <SectionHeader>PLAYOFF ODDS</SectionHeader>
-          <p className="font-bold text-sm mb-1">In the Playoffs:</p>
-          {data.playoff_picture.playoff.map((e) => (
-            <div key={e.seed} className="flex gap-2 py-0.5 text-sm text-green-700">
-              <span className="w-4">{e.seed}.</span>
-              <span>{e.team_name}</span>
-              <span className="text-gray-500">[{e.wins}-{e.losses}{e.ties ? `-${e.ties}` : ''}]</span>
-              <span>✅</span>
-            </div>
-          ))}
-          <p className="font-bold text-sm mt-3 mb-1">Out of the Playoffs:</p>
-          {data.playoff_picture.consolation.map((e) => (
-            <div key={e.seed} className="flex gap-2 py-0.5 text-sm text-red-600">
-              <span className="w-4">{e.seed}.</span>
-              <span>{e.team_name}</span>
-              <span className="text-gray-500">[{e.wins}-{e.losses}{e.ties ? `-${e.ties}` : ''}]</span>
-              <span>❌</span>
-            </div>
-          ))}
+          {data.playoff_odds && (
+            <>
+              <SectionHeader>PLAYOFF ODDS</SectionHeader>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-blue-600 text-white">
+                    <th className="px-3 py-2 text-left">Team</th>
+                    <th className="px-3 py-2 text-center">Record</th>
+                    <th className="px-3 py-2 text-center">Make Playoffs</th>
+                    <th className="px-3 py-2 text-center">Win Division</th>
+                    <th className="px-3 py-2 text-center">1st Rd Bye</th>
+                    <th className="px-3 py-2 text-center">Win Championship</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.playoff_odds.map((o, i) => (
+                    <tr key={o.team_name} className={i % 2 === 0 ? 'bg-gray-50' : ''}>
+                      <td className="px-3 py-1">{o.team_name}</td>
+                      <td className="px-3 py-1 text-center">{o.current_record}</td>
+                      <td className="px-3 py-1 text-center font-bold">{o.make_playoffs_display}</td>
+                      <td className="px-3 py-1 text-center">{o.win_division_display}</td>
+                      <td className="px-3 py-1 text-center">{o.first_round_bye_display}</td>
+                      <td className="px-3 py-1 text-center">{o.win_finals_display}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           {/* Next Week Matchups */}
           <SectionHeader>WEEK {data.week + 1} MATCHUPS</SectionHeader>
