@@ -108,6 +108,10 @@ export const api = {
   getNewsletterRecaps: (week: number, season?: number) =>
     apiClient.get(`/matchup-recaps/newsletter/${week}`, { params: { season } }).then(res => res.data),
 
+  // Newsletter
+  getNewsletter: (week: number, season?: number) =>
+    apiClient.get(`/newsletter/${week}`, { params: season ? { season } : {} }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
