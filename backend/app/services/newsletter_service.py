@@ -309,10 +309,10 @@ async def _get_rookie_report(
             pos_rank[row.position] += 1
             overall_rank[row.player_id] = pos_rank[row.position]
 
-    # Filter to rookies (years_exp == 0 or rookie_year == season_year)
+    # Filter to rookies with points (years_exp == 0 or rookie_year == season_year)
     rookies = [
         r for r in all_rows
-        if r.years_exp == 0 or r.rookie_year == season_year
+        if (r.years_exp == 0 or r.rookie_year == season_year) and (r.total_points or 0) > 0
     ]
 
     rookie_player_ids = [r.player_id for r in rookies]

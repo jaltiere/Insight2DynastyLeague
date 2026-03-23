@@ -211,3 +211,35 @@ async def test_newsletter_empty_recaps(client: AsyncClient, base_data):
     data = resp.json()
     assert data["recaps"] == []
     assert data["upcoming_matchups"] == []
+
+
+@pytest.mark.anyio
+async def test_rookie_report_excludes_zero_point_rookies(client: AsyncClient, db_session):
+    """Rookies with 0 points should not appear in the rookie report."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    user1 = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    user2 = await create_user(db_session, id="u2", username="bob", display_name="Bob")
+    roster1 = await create_roster(db_session, season, user1, roster_id=1, division=1)
+    roster2 = await create_roster(db_session, season, user2, roster_id=2, division=2)
+    matchup = await create_matchup(db_session, season, roster1, roster2, week=3)
+
+    active_rookie = await create_player(
+        db_session, id="rb_active", full_name="Active Rookie", position="RB",
+        team="KC", years_exp=0, rookie_year=2024,
+    )
+    zero_rookie = await create_player(
+        db_session, id="rb_zero", full_name="Zero Rookie", position="RB",
+        team="SF", years_exp=0, rookie_year=2024,
+    )
+
+    await create_matchup_player_point(db_session, matchup, roster1, active_rookie, points=18.5, is_starter=True)
+    await create_matchup_player_point(db_session, matchup, roster2, zero_rookie, points=0.0, is_starter=True)
+    await db_session.commit()
+
+    resp = await client.get("/api/newsletter/3")
+    data = resp.json()
+    rb_rookies = data["rookie_report"]["RB"]
+    names = [r["player_name"] for r in rb_rookies]
+    assert "Active Rookie" in names
+    assert "Zero Rookie" not in names
