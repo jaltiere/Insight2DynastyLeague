@@ -31,9 +31,12 @@ async def get_newsletter_data(
     potential_points = await _get_potential_points(db, season.id, rosters_map)
     recaps, upcoming = await _get_recaps(db, season.id, week)
 
+    is_regular_season = week <= (season.regular_season_weeks or 14)
+
     return {
         "week": week,
         "season": season.year,
+        "is_regular_season": is_regular_season,
         "high_score": score_data["high_score"],
         "low_score": score_data["low_score"],
         "league_median": score_data["league_median"],

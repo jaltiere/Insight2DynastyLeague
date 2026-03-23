@@ -72,6 +72,7 @@ interface RecapEntry {
 interface NewsletterData {
   week: number;
   season: number;
+  is_regular_season: boolean;
   high_score: ScoreEntry;
   low_score: ScoreEntry;
   league_median: LeagueMedian;
@@ -218,7 +219,7 @@ ${section('HIGH SCORE', `<p style="font-size:16px;font-weight:bold;">${data.high
 
 ${section('LOW SCORE', `<p style="font-size:16px;font-weight:bold;">${data.low_score.team_name} — ${data.low_score.points}</p>`)}
 
-${section('LEAGUE MEDIAN', `
+${data.is_regular_season ? section('LEAGUE MEDIAN', `
 <p style="color:#6b7280;margin-bottom:4px;">Median: ${data.league_median.median}</p>
 <table style="width:100%;border-collapse:collapse;">
   <tr style="background-color:${HEADER_BG};color:white;">
@@ -226,7 +227,7 @@ ${section('LEAGUE MEDIAN', `
     <th style="padding:6px 8px;text-align:right;">Score</th>
   </tr>
   ${medianRows}
-</table>`)}
+</table>`) : ''}
 
 ${section('GAME RECAPS', recapText || '<p>[Recaps not yet available]</p>')}
 
@@ -571,9 +572,13 @@ export default function Newsletter() {
             {data.low_score.team_name} — {data.low_score.points}
           </p>
 
-          {/* League Median */}
-          <SectionHeader>LEAGUE MEDIAN</SectionHeader>
-          <MedianTable data={data.league_median} />
+          {/* League Median — regular season only */}
+          {data.is_regular_season && (
+            <>
+              <SectionHeader>LEAGUE MEDIAN</SectionHeader>
+              <MedianTable data={data.league_median} />
+            </>
+          )}
 
           {/* Game Recaps */}
           <SectionHeader>GAME RECAPS</SectionHeader>

@@ -80,7 +80,7 @@ async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data
     data = resp.json()
 
     required_keys = [
-        "week", "season", "high_score", "low_score", "league_median",
+        "week", "season", "is_regular_season", "high_score", "low_score", "league_median",
         "top_players", "season_leaders", "rookie_report",
         "playoff_picture", "potential_points", "recaps", "upcoming_matchups",
     ]
@@ -94,6 +94,19 @@ async def test_newsletter_week_and_season(client: AsyncClient, base_data):
     data = resp.json()
     assert data["week"] == 5
     assert data["season"] == 2024
+
+
+@pytest.mark.anyio
+async def test_newsletter_is_regular_season_flag(client: AsyncClient, base_data):
+    # Week 5 is within regular season (14 weeks), so should be True
+    resp = await client.get("/api/newsletter/5")
+    data = resp.json()
+    assert data["is_regular_season"] is True
+
+    # Week 15 is beyond regular season (14 weeks), so should be False
+    resp = await client.get("/api/newsletter/15")
+    data = resp.json()
+    assert data["is_regular_season"] is False
 
 
 @pytest.mark.anyio
