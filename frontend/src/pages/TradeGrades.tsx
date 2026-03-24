@@ -297,7 +297,7 @@ export default function TradeGrades() {
 
   const trades: Trade[] = data?.trades || [];
   const seasons: number[] = (seasonsData?.seasons || [])
-    .map((s: { year: number }) => s.year)
+    .map((s: number) => s)
     .sort((a: number, b: number) => b - a);
   const owners: Owner[] = (ownersData?.owners || [])
     .map((o: Owner) => ({
