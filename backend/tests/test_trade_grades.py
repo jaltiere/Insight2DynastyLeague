@@ -645,3 +645,86 @@ async def test_trade_grades_excludes_non_trades(client, db_session):
     response = await client.get("/api/trade-grades")
     assert response.status_code == 200
     assert response.json()["trades"] == []
+
+
+async def test_trade_grades_full_career_credit_after_retrade(client, db_session):
+    """Player B acquired by user1 and later re-traded to user3.
+    User1 should get full career credit for Player B's points — including
+    weeks after the re-trade — not just the weeks B was on user1's roster."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024, regular_season_weeks=14)
+    user1 = await create_user(db_session, id="u1", username="owner1", display_name="Owner One")
+    user2 = await create_user(db_session, id="u2", username="owner2", display_name="Owner Two")
+    user3 = await create_user(db_session, id="u3", username="owner3", display_name="Owner Three")
+    roster1 = await create_roster(db_session, season, user1, roster_id=1)
+    roster2 = await create_roster(db_session, season, user2, roster_id=2)
+    roster3 = await create_roster(db_session, season, user3, roster_id=3)
+
+    player_a = await create_player(db_session, id="pA", full_name="Player A", position="WR", team="KC")
+    player_b = await create_player(db_session, id="pB", full_name="Player B", position="RB", team="SF")
+    player_c = await create_player(db_session, id="pC", full_name="Player C", position="WR", team="DAL")
+
+    # Trade 1 (week 5): user1 sends player_a, receives player_b from user2
+    await create_transaction(
+        db_session, season,
+        id="trade_001",
+        type="trade",
+        status="complete",
+        week=5,
+        roster_ids=[1, 2],
+        adds={"pA": 2, "pB": 1},
+        drops={"pA": 1, "pB": 2},
+        picks=None,
+        waiver_bid=None,
+        status_updated=1700000010000,
+    )
+
+    # Trade 2 (week 8): user1 re-trades player_b to user3, gets player_c
+    await create_transaction(
+        db_session, season,
+        id="trade_002",
+        type="trade",
+        status="complete",
+        week=8,
+        roster_ids=[1, 3],
+        adds={"pB": 3, "pC": 1},
+        drops={"pB": 1, "pC": 3},
+        picks=None,
+        waiver_bid=None,
+        status_updated=1700000020000,
+    )
+
+    # Player B scores on roster1 (weeks 6-8: while user1 held them)
+    for wk in [6, 7, 8]:
+        await _add_player_points(db_session, season, roster1, player_b, wk, 10.0, is_starter=True)
+
+    # Player B scores on roster3 (weeks 9-11: after re-trade to user3)
+    for wk in [9, 10, 11]:
+        await _add_player_points(db_session, season, roster3, player_b, wk, 15.0, is_starter=True)
+
+    # Player A scores on roster2 (small amount)
+    for wk in [6, 7, 8, 9, 10, 11]:
+        await _add_player_points(db_session, season, roster2, player_a, wk, 5.0, is_starter=True)
+
+    await db_session.flush()
+
+    response = await client.get("/api/trade-grades")
+    assert response.status_code == 200
+    trades = response.json()["trades"]
+
+    # Find trade_001 (the original trade between user1 and user2)
+    trade_001 = next(t for t in trades if t["trade_id"] == "trade_001")
+    # Find user1's side (roster_id=1, received player_b)
+    user1_side = next(s for s in trade_001["sides"] if s["roster_id"] == 1)
+    pb_detail = next(p for p in user1_side["assets_received"]["players"] if p["player_id"] == "pB")
+
+    # With full career credit: player_b points = (10*3 + 15*3) * 1.5 = 112.5
+    # Without fix (held only): player_b points = 10*3 * 1.5 = 45.0
+    assert pb_detail["weighted_points"] > 45.0, (
+        f"Expected full career credit (>45 weighted pts), got {pb_detail['weighted_points']}. "
+        "Player B's post-retrade points should count toward the original trade."
+    )
+    # Starter weeks should include all 6 weeks (3 on roster1 + 3 on roster3)
+    assert pb_detail["starter_weeks"] == 6, (
+        f"Expected 6 starter weeks (full career), got {pb_detail['starter_weeks']}"
+    )
