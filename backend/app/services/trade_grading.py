@@ -485,28 +485,21 @@ class TradeGradingService:
     def _calculate_player_value(
         self,
         player_id: str,
-        user_id: str,
         trade_season_year: int,
         trade_week: int,
         points_index: Dict,
-        roster_to_user: Dict[int, str],
-        user_roster_map: Dict[str, Set[int]],
     ) -> Tuple[float, int, int]:
-        """Sum weighted points for a player on ANY roster belonging to
-        user_id after the trade.  Returns (total_value, starter_weeks,
-        bench_weeks)."""
+        """Sum weighted points for a player after the trade date, across ALL
+        rosters (full career credit).  This ensures teams get credit for the
+        full value of players they acquired, even if they later re-traded them.
+        Returns (total_value, starter_weeks, bench_weeks)."""
         total = 0.0
         starter_weeks = 0
         bench_weeks = 0
 
-        # All db_roster_ids that belong to this user
-        user_rids = user_roster_map.get(user_id, set())
-
         for key, (pts, is_starter) in points_index.items():
             pid, rid, year, week = key
             if pid != str(player_id):
-                continue
-            if rid not in user_rids:
                 continue
             # Only count weeks after the trade
             if year < trade_season_year:
@@ -664,18 +657,12 @@ class TradeGradingService:
 
             for pid in data["players_received"]:
                 pinfo = player_map.get(str(pid), {})
-                if user_id:
-                    val, s_wks, b_wks = self._calculate_player_value(
-                        pid,
-                        user_id,
-                        trade_year,
-                        trade_week,
-                        points_index,
-                        roster_to_user,
-                        user_roster_map,
-                    )
-                else:
-                    val, s_wks, b_wks = 0.0, 0, 0
+                val, s_wks, b_wks = self._calculate_player_value(
+                    pid,
+                    trade_year,
+                    trade_week,
+                    points_index,
+                )
 
                 # Find which side gave this player away
                 giving_rid = None
@@ -741,16 +728,13 @@ class TradeGradingService:
                             (pick_season, pick_round, slot)
                         )
 
-                if resolved_player_id and user_id:
+                if resolved_player_id:
                     # Pick was used — use actual player's points
                     p_val, _, _ = self._calculate_player_value(
                         resolved_player_id,
-                        user_id,
                         trade_year,
                         trade_week,
                         points_index,
-                        roster_to_user,
-                        user_roster_map,
                     )
                     pick_value = p_val
                     status = "actual"
