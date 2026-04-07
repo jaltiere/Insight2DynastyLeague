@@ -318,6 +318,17 @@ curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-pred
 
 You can also trigger the `weekly-recaps.yml` workflow manually from GitHub Actions (workflow_dispatch), but note this will be skipped during offseason unless the endpoints are called with `?force=true`.
 
+### Week 1 Wednesday Game
+The Thursday prediction sync won't run in time when Week 1 has a Wednesday night game. Manually trigger predictions the morning of the Wednesday game with a direct API call:
+
+```bash
+# Run before the first game of Week 1 (Wednesday or whenever it kicks off)
+curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/1?season=2026" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+No `?force=true` needed — the season will be active by then. Update the `season` param each year.
+
 ### Read Endpoints (No Auth Required)
 - `GET /api/matchup-recaps/current` - Current week matchups with predictions (empty during offseason)
 - `GET /api/matchup-recaps/previous` - Previous week recaps (shows championship week during offseason)
