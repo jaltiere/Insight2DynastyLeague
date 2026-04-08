@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 interface TaxiPlayer {
   player_id: string;
@@ -38,6 +39,7 @@ function getPositionColor(position: string | null): string {
 }
 
 export default function TaxiSquads() {
+  const { openPlayer } = usePlayerModal();
   const { data, isLoading, error } = useQuery<TaxiSquadsData>({
     queryKey: ['taxiSquads'],
     queryFn: api.getTaxiSquads,
@@ -118,7 +120,14 @@ export default function TaxiSquads() {
                   {team.players.length > 0 ? (
                     team.players.map((player) => (
                       <tr key={player.player_id} className="border-b last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-2 text-sm font-medium">{player.full_name}</td>
+                        <td className="px-4 py-2 text-sm font-medium">
+                          <button
+                            onClick={() => openPlayer(player.player_id)}
+                            className="hover:text-blue-600 hover:underline text-left"
+                          >
+                            {player.full_name}
+                          </button>
+                        </td>
                         <td className="px-4 py-2 text-center">
                           {player.position ? (
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded ${getPositionColor(player.position)}`}>

@@ -99,3 +99,61 @@ export interface CurrentWeekInfo {
   week: number;
   season: number;
 }
+
+// Player Profile types
+export interface PlayerScoringHistory {
+  season: number;
+  total_points: number;
+  games: number;
+  avg_points: number;
+  starter_games: number;
+}
+
+export interface PlayerOwner {
+  user_id: string;
+  display_name: string;
+  username: string;
+  avatar?: string;
+  team_name?: string | null;
+  roster_id?: number;
+  season?: number;
+}
+
+export interface PlayerOwnershipEvent {
+  event_type: 'trade' | 'waiver' | 'free_agent' | 'release';
+  season: number;
+  week: number;
+  from_owner: Partial<PlayerOwner> | null;
+  to_owner: Partial<PlayerOwner> | null;
+}
+
+export interface PlayerDraftHistory {
+  year: number;
+  draft_type: string;
+  round: number;
+  pick_in_round: number;
+  overall_pick: number;
+  owner: Partial<PlayerOwner>;
+}
+
+export interface PlayerProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  position: string | null;
+  team: string | null;
+  number: number | null;
+  age: number | null;
+  height: string | null;
+  weight: number | null;
+  college: string | null;
+  years_exp: number | null;
+  status: string | null;
+  injury_status: string | null;
+  stats: Record<string, unknown> | null;
+  scoring_history: PlayerScoringHistory[];
+  current_owner: PlayerOwner | null;
+  ownership_history: PlayerOwnershipEvent[];
+  draft_history: PlayerDraftHistory[];
+}

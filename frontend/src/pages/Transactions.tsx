@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 const POSITION_COLORS: Record<string, string> = {
   QB: 'bg-pink-500',
@@ -59,6 +60,7 @@ interface ModalProps {
 }
 
 function TransactionModal({ teamName, typeName, userId, type, season, onClose }: ModalProps) {
+  const { openPlayer } = usePlayerModal();
   const { data, isLoading } = useQuery({
     queryKey: ['transactionsByOwner', userId, type, season],
     queryFn: () => api.getTransactionsByOwner(userId, type, season),
@@ -145,7 +147,7 @@ function TransactionModal({ teamName, typeName, userId, type, season, onClose }:
                                   {received.map((add: any) => (
                                     <div key={add.player_id} className="flex items-center mt-0.5 ml-2">
                                       <PositionBadge position={add.position} />
-                                      <span className="text-xs text-gray-800">{add.player_name}</span>
+                                      <button onClick={() => openPlayer(add.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{add.player_name}</button>
                                     </div>
                                   ))}
                                   {picksGot.map((pick: any, idx: number) => (
@@ -161,7 +163,7 @@ function TransactionModal({ teamName, typeName, userId, type, season, onClose }:
                                   {gave.map((drop: any) => (
                                     <div key={drop.player_id} className="flex items-center mt-0.5 ml-2">
                                       <PositionBadge position={drop.position} />
-                                      <span className="text-xs text-gray-800">{drop.player_name}</span>
+                                      <button onClick={() => openPlayer(drop.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{drop.player_name}</button>
                                     </div>
                                   ))}
                                   {picksLost.map((pick: any, idx: number) => (
@@ -189,7 +191,7 @@ function TransactionModal({ teamName, typeName, userId, type, season, onClose }:
                             {txn.adds.map((add: any) => (
                               <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                                 <PositionBadge position={add.position} />
-                                <span className="text-xs text-gray-800">{add.player_name}</span>
+                                <button onClick={() => openPlayer(add.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{add.player_name}</button>
                               </div>
                             ))}
                           </div>
@@ -200,7 +202,7 @@ function TransactionModal({ teamName, typeName, userId, type, season, onClose }:
                             {txn.drops.map((drop: any) => (
                               <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
                                 <PositionBadge position={drop.position} />
-                                <span className="text-xs text-gray-800">{drop.player_name}</span>
+                                <button onClick={() => openPlayer(drop.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{drop.player_name}</button>
                               </div>
                             ))}
                           </div>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 interface DraftSummary {
   draft_id: string;
@@ -71,6 +72,7 @@ function avatarUrl(avatarId: string | null): string | null {
 }
 
 export default function Drafts() {
+  const { openPlayer } = usePlayerModal();
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   const { data: draftList, isLoading: listLoading, error: listError } = useQuery<DraftListData>({
@@ -273,9 +275,18 @@ export default function Drafts() {
                         <td key={slot} className="p-0.5">
                           <div className={`${posColor} border rounded p-1 min-h-[48px]`}>
                             <div className="flex justify-between items-start">
-                              <span className="font-semibold text-[11px] leading-tight truncate">
-                                {pick.player_name || 'Unknown'}
-                              </span>
+                              {pick.player_id ? (
+                                <button
+                                  onClick={() => openPlayer(pick.player_id!)}
+                                  className="font-semibold text-[11px] leading-tight truncate hover:underline text-left w-full"
+                                >
+                                  {pick.player_name || 'Unknown'}
+                                </button>
+                              ) : (
+                                <span className="font-semibold text-[11px] leading-tight truncate">
+                                  {pick.player_name || 'Unknown'}
+                                </span>
+                              )}
                               <span className="text-[9px] opacity-60 ml-0.5 whitespace-nowrap">
                                 {pick.round}.{pick.pick_in_round}
                               </span>

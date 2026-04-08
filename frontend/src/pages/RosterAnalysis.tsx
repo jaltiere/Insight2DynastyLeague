@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ function TeamCard({
   leagueMaxScore: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { openPlayer } = usePlayerModal();
   const avatar = avatarUrl(team.avatar);
 
   return (
@@ -197,7 +199,12 @@ function TeamCard({
                   className="border-b last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
                   <td className="px-4 py-1.5 font-medium truncate max-w-0 w-full">
-                    {player.player_name}
+                    <button
+                      onClick={() => openPlayer(player.player_id)}
+                      className="hover:text-blue-600 hover:underline text-left"
+                    >
+                      {player.player_name}
+                    </button>
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     {player.position ? (

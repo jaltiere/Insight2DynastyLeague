@@ -63,6 +63,7 @@ async def _get_game_records(db, match_type, roster_type, position, limit):
     return [
         {
             "rank": i + 1,
+            "player_id": row.player_id,
             "player_name": row.player_name,
             "position": row.position or "—",
             "team": row.team or "—",
@@ -119,6 +120,7 @@ async def _get_season_records(db, match_type, roster_type, position, limit):
     return [
         {
             "rank": i + 1,
+            "player_id": row.player_id,
             "player_name": row.player_name,
             "position": row.position or "—",
             "team": row.team or "—",
@@ -189,6 +191,7 @@ async def _get_career_records(db, match_type, roster_type, position, limit):
     return [
         {
             "rank": i + 1,
+            "player_id": row.player_id,
             "player_name": row.player_name,
             "position": row.position or "—",
             "team": row.team or "—",
