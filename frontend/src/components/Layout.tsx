@@ -2,25 +2,72 @@ import { useState } from 'react';
 import { Link, Outlet } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 
+interface NavLink {
+  to: string;
+  label: string;
+}
+
+interface NavGroup {
+  label: string;
+  links: NavLink[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'Season',
+    links: [
+      { to: '/', label: 'Standings' },
+      { to: '/matchup-recaps', label: 'Matchups' },
+      { to: '/playoffs', label: 'Playoffs' },
+      { to: '/power-rankings', label: 'Power Rankings' },
+    ],
+  },
+  {
+    label: 'Teams',
+    links: [
+      { to: '/owners', label: 'Owners' },
+      { to: '/roster-analysis', label: 'Rosters' },
+      { to: '/head-to-head', label: 'H2H' },
+      { to: '/taxi-squads', label: 'Taxi' },
+    ],
+  },
+  {
+    label: 'History',
+    links: [
+      { to: '/league-history', label: 'League History' },
+      { to: '/records', label: 'Records' },
+      { to: '/drafts', label: 'Drafts' },
+      { to: '/draft-rankings', label: 'Draft Rankings' },
+    ],
+  },
+  {
+    label: 'Moves',
+    links: [
+      { to: '/transactions', label: 'Transactions' },
+      { to: '/trade-grades', label: 'Trade Grades' },
+    ],
+  },
+];
+
+const ThemeIcon = ({ theme }: { theme: string }) =>
+  theme === 'dark' ? (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+      <path
+        fillRule="evenodd"
+        d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
+        clipRule="evenodd"
+      />
+    </svg>
+  ) : (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+    </svg>
+  );
+
 export default function Layout() {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const navLinks = [
-    { to: '/', label: 'Standings' },
-    { to: '/matchup-recaps', label: 'Matchups' },
-    { to: '/power-rankings', label: 'Power Rankings' },
-    { to: '/taxi-squads', label: 'Taxi' },
-    { to: '/records', label: 'Records' },
-    { to: '/head-to-head', label: 'H2H' },
-    { to: '/owners', label: 'Owners' },
-    { to: '/drafts', label: 'Drafts' },
-    { to: '/transactions', label: 'Transactions' },
-    { to: '/trade-grades', label: 'Trade Grades' },
-    { to: '/draft-rankings', label: 'Draft Rankings' },
-    { to: '/league-history', label: 'History' },
-    { to: '/playoffs', label: 'Playoffs' },
-  ];
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
@@ -30,54 +77,68 @@ export default function Layout() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link to="/" className="text-xl md:text-2xl font-bold flex-shrink-0" onClick={closeMobileMenu}>
+            <Link
+              to="/"
+              className="text-xl md:text-2xl font-bold flex-shrink-0"
+              onClick={closeMobileMenu}
+            >
               Insight2Dynasty
             </Link>
 
-            {/* Desktop Navigation - hidden on mobile, visible on md and up */}
-            <div className="hidden md:flex items-center space-x-4 lg:space-x-6">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className="text-sm lg:text-base font-semibold hover:text-blue-200 transition whitespace-nowrap"
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
+              {navGroups.map((group) => (
+                <div
+                  key={group.label}
+                  className="relative"
+                  onMouseEnter={() => setOpenDropdown(group.label)}
+                  onMouseLeave={() => setOpenDropdown(null)}
                 >
-                  {link.label}
-                </Link>
+                  <button className="flex items-center gap-1 px-3 py-2 text-sm lg:text-base font-semibold hover:text-blue-200 transition whitespace-nowrap rounded-md hover:bg-blue-500 dark:hover:bg-blue-700">
+                    {group.label}
+                    <svg className="w-3 h-3 mt-0.5 opacity-70" fill="currentColor" viewBox="0 0 20 20">
+                      <path
+                        fillRule="evenodd"
+                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+
+                  {openDropdown === group.label && (
+                    <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 py-1 border border-gray-200 dark:border-gray-700">
+                      {group.links.map((link) => (
+                        <Link
+                          key={link.to}
+                          to={link.to}
+                          onClick={() => setOpenDropdown(null)}
+                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900 hover:text-blue-700 dark:hover:text-blue-200 transition"
+                        >
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
+
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
+                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition ml-2"
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                {theme === 'dark' ? (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                  </svg>
-                )}
+                <ThemeIcon theme={theme} />
               </button>
             </div>
 
-            {/* Mobile menu button and theme toggle */}
+            {/* Mobile: theme toggle + hamburger */}
             <div className="flex items-center space-x-2 md:hidden">
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                {theme === 'dark' ? (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                  </svg>
-                )}
+                <ThemeIcon theme={theme} />
               </button>
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -97,21 +158,26 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Mobile Navigation Menu */}
+          {/* Mobile Navigation Menu – grouped with section headers */}
           {mobileMenuOpen && (
-            <div className="md:hidden pb-4">
-              <div className="flex flex-col space-y-2">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    onClick={closeMobileMenu}
-                    className="px-4 py-2 text-sm font-semibold hover:bg-blue-500 dark:hover:bg-blue-700 rounded transition"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </div>
+            <div className="md:hidden pb-4 space-y-3">
+              {navGroups.map((group) => (
+                <div key={group.label}>
+                  <div className="px-4 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-blue-200">
+                    {group.label}
+                  </div>
+                  {group.links.map((link) => (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      onClick={closeMobileMenu}
+                      className="block px-6 py-2 text-sm font-semibold hover:bg-blue-500 dark:hover:bg-blue-700 rounded transition"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              ))}
             </div>
           )}
         </div>
