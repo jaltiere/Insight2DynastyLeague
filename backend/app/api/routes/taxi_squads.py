@@ -67,11 +67,12 @@ async def get_taxi_squads(db: AsyncSession = Depends(get_db)):
             p["full_name"],
         ))
 
-        teams.append({
-            "owner_name": user.display_name or user.username,
-            "team_name": roster.team_name,
-            "avatar": user.avatar,
-            "players": players,
-        })
+        if players:
+            teams.append({
+                "owner_name": user.display_name or user.username,
+                "team_name": roster.team_name,
+                "avatar": user.avatar,
+                "players": players,
+            })
 
     return {"season": season.year, "teams": teams}

@@ -375,6 +375,7 @@ Test on multiple viewport sizes:
 - Check dark mode on all devices
 
 ### Unit Testing Requirements
+- **All tests must pass before merging or shipping any feature.** Disabling, skipping, or deleting tests to make a build green is never acceptable. If a test is failing, fix the underlying code.
 - **Always add or update unit tests** when adding new features, fixing bugs, or modifying API endpoints
 - Backend tests live in `backend/tests/` using pytest with async support
 - Use the factory helpers in `backend/tests/conftest.py` (`create_league`, `create_user`, `create_season`, `create_roster`, etc.) to set up test data

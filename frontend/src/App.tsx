@@ -15,6 +15,7 @@ import DraftRankings from './pages/DraftRankings';
 import Playoffs from './pages/Playoffs';
 import MatchupRecaps from './pages/MatchupRecaps';
 import Newsletter from './pages/Newsletter';
+import RosterAnalysis from './pages/RosterAnalysis';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +47,7 @@ function App() {
             <Route path="playoffs" element={<Playoffs />} />
             <Route path="matchup-recaps" element={<MatchupRecaps />} />
             <Route path="newsletter" element={<Newsletter />} />
+            <Route path="roster-analysis" element={<RosterAnalysis />} />
           </Route>
         </Routes>
       </BrowserRouter>

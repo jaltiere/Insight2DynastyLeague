@@ -112,6 +112,9 @@ export const api = {
   getNewsletter: (week: number, season?: number) =>
     apiClient.get(`/newsletter/${week}`, { params: season ? { season } : {} }).then(res => res.data),
 
+  // Roster Analysis
+  getRosterAnalysis: () => apiClient.get('/roster-analysis').then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
