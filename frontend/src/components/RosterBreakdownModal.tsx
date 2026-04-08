@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 interface RosterBreakdownModalProps {
   rosterId: number;
@@ -33,6 +34,7 @@ export default function RosterBreakdownModal({
   season,
   onClose,
 }: RosterBreakdownModalProps) {
+  const { openPlayer } = usePlayerModal();
   const { data, isLoading } = useQuery<RosterBreakdown>({
     queryKey: ['rosterBreakdown', season, rosterId],
     queryFn: () => api.getRosterBreakdown(season, rosterId),
@@ -133,7 +135,12 @@ export default function RosterBreakdownModal({
                       .map((player: PlayerPowerScore) => (
                         <tr key={player.player_id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm font-medium">
-                            {player.player_name}
+                            <button
+                              onClick={() => openPlayer(player.player_id)}
+                              className="hover:text-blue-600 hover:underline text-left"
+                            >
+                              {player.player_name}
+                            </button>
                           </td>
                           <td className="px-4 py-3 text-sm text-center">
                             <span

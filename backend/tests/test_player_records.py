@@ -115,7 +115,7 @@ async def test_game_response_has_all_fields(client, seed_data):
     resp = await client.get("/api/player-records?view=game&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
-        "rank", "player_name", "position", "team", "points",
+        "rank", "player_id", "player_name", "position", "team", "points",
         "season", "week", "match_type", "is_starter",
         "owner_name", "team_name",
     }
@@ -143,7 +143,7 @@ async def test_season_response_has_all_fields(client, seed_data):
     resp = await client.get("/api/player-records?view=season&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
-        "rank", "player_name", "position", "team", "total_points",
+        "rank", "player_id", "player_name", "position", "team", "total_points",
         "games_played", "avg_points", "season", "owner_name", "team_name",
     }
     assert expected_fields.issubset(set(rec.keys()))
@@ -169,7 +169,7 @@ async def test_career_response_has_all_fields(client, seed_data):
     resp = await client.get("/api/player-records?view=career&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
-        "rank", "player_name", "position", "team", "total_points",
+        "rank", "player_id", "player_name", "position", "team", "total_points",
         "games_played", "avg_points", "seasons_played", "owner_name",
     }
     assert expected_fields.issubset(set(rec.keys()))

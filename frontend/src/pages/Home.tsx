@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import DraftCountdownBanner from '../components/DraftCountdownBanner';
+import { usePlayerModal } from '../context/PlayerModalContext';
 import type { StandingsTeam, StandingsResponse, Transaction } from '../types';
 
 const POSITION_COLORS: Record<string, string> = {
@@ -90,6 +91,7 @@ function formatDate(ms: number | null): string {
 }
 
 function TransactionCard({ txn }: { txn: Transaction }) {
+  const { openPlayer } = usePlayerModal();
   const typeLabel = txn.type === 'free_agent'
     ? 'Free Agent'
     : txn.type?.charAt(0).toUpperCase() + txn.type?.slice(1);
@@ -135,7 +137,7 @@ function TransactionCard({ txn }: { txn: Transaction }) {
                     {received.map((add) => (
                       <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                         <PositionBadge position={add.position} />
-                        <span className="text-xs text-gray-800">{add.player_name}</span>
+                        <button onClick={() => openPlayer(add.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{add.player_name}</button>
                       </div>
                     ))}
                     {picksGot.map((pick, idx) => (
@@ -151,7 +153,7 @@ function TransactionCard({ txn }: { txn: Transaction }) {
                     {gave.map((drop) => (
                       <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
                         <PositionBadge position={drop.position} />
-                        <span className="text-xs text-gray-800">{drop.player_name}</span>
+                        <button onClick={() => openPlayer(drop.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{drop.player_name}</button>
                       </div>
                     ))}
                     {picksLost.map((pick, idx) => (
@@ -178,7 +180,7 @@ function TransactionCard({ txn }: { txn: Transaction }) {
               {txn.adds.map((add) => (
                 <div key={add.player_id} className="flex items-center mt-0.5 ml-1">
                   <PositionBadge position={add.position} />
-                  <span className="text-xs text-gray-800">{add.player_name}</span>
+                  <button onClick={() => openPlayer(add.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{add.player_name}</button>
                 </div>
               ))}
             </div>
@@ -189,7 +191,7 @@ function TransactionCard({ txn }: { txn: Transaction }) {
               {txn.drops.map((drop) => (
                 <div key={drop.player_id} className="flex items-center mt-0.5 ml-1">
                   <PositionBadge position={drop.position} />
-                  <span className="text-xs text-gray-800">{drop.player_name}</span>
+                  <button onClick={() => openPlayer(drop.player_id)} className="text-xs text-gray-800 hover:text-blue-600 hover:underline text-left">{drop.player_name}</button>
                 </div>
               ))}
             </div>

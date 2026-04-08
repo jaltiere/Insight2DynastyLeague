@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 type RecordType = 'player' | 'rookie';
 type View = 'game' | 'season' | 'career';
@@ -23,6 +24,7 @@ const positions = ['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
 
 interface GameRecord {
   rank: number;
+  player_id: string;
   player_name: string;
   position: string;
   team: string;
@@ -37,6 +39,7 @@ interface GameRecord {
 
 interface SeasonRecord {
   rank: number;
+  player_id: string;
   player_name: string;
   position: string;
   team: string;
@@ -50,6 +53,7 @@ interface SeasonRecord {
 
 interface CareerRecord {
   rank: number;
+  player_id: string;
   player_name: string;
   position: string;
   team: string;
@@ -270,6 +274,7 @@ function GameTable({
   records: GameRecord[];
   thClass: string;
 }) {
+  const { openPlayer } = usePlayerModal();
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -295,7 +300,9 @@ function GameTable({
               {rec.rank}
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-              {rec.player_name}
+              <button onClick={() => openPlayer(rec.player_id)} className="hover:text-blue-600 hover:underline text-left">
+                {rec.player_name}
+              </button>
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-center">
               {rec.position}
@@ -330,6 +337,7 @@ function SeasonTable({
   records: SeasonRecord[];
   thClass: string;
 }) {
+  const { openPlayer } = usePlayerModal();
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -353,7 +361,9 @@ function SeasonTable({
               {rec.rank}
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-              {rec.player_name}
+              <button onClick={() => openPlayer(rec.player_id)} className="hover:text-blue-600 hover:underline text-left">
+                {rec.player_name}
+              </button>
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-center">
               {rec.position}
@@ -391,6 +401,7 @@ function CareerTable({
   records: CareerRecord[];
   thClass: string;
 }) {
+  const { openPlayer } = usePlayerModal();
   return (
     <table className="w-full">
       <thead className="bg-gray-50">
@@ -413,7 +424,9 @@ function CareerTable({
               {rec.rank}
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 font-medium">
-              {rec.player_name}
+              <button onClick={() => openPlayer(rec.player_id)} className="hover:text-blue-600 hover:underline text-left">
+                {rec.player_name}
+              </button>
             </td>
             <td className="px-4 py-3 text-sm text-gray-900 text-center">
               {rec.position}

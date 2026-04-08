@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { usePlayerModal } from '../context/PlayerModalContext';
 
 const POSITION_COLORS: Record<string, string> = {
   QB: 'bg-pink-500',
@@ -131,6 +132,7 @@ function SmallGradeBadge({ grade }: { grade: string }) {
 }
 
 function PicksDetailView({ picks }: { picks: PickDetail[] }) {
+  const { openPlayer } = usePlayerModal();
   return (
     <div className="px-6 py-4 bg-gray-50">
       <div className="text-xs font-semibold text-gray-500 uppercase mb-2">
@@ -145,7 +147,7 @@ function PicksDetailView({ picks }: { picks: PickDetail[] }) {
                   {pick.round}.{pick.pick_no}
                 </span>
                 <PositionBadge position={pick.position} />
-                <span className="text-sm font-medium text-gray-900">{pick.player_name}</span>
+                <button onClick={() => openPlayer(pick.player_id)} className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline text-left">{pick.player_name}</button>
                 {pick.team && (
                   <span className="text-xs text-gray-500 ml-1.5">({pick.team})</span>
                 )}
@@ -171,6 +173,7 @@ function PicksDetailView({ picks }: { picks: PickDetail[] }) {
 
 // Cross-draft aggregate ranking table
 function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
+  const { openPlayer } = usePlayerModal();
   const [expandedOwner, setExpandedOwner] = useState<string | null>(null);
 
   // Aggregate stats by owner across all drafts
@@ -333,7 +336,7 @@ function CrossDraftRankingTable({ drafts }: { drafts: DraftGrade[] }) {
                                       {pick.round}.{pick.pick_no}
                                     </span>
                                     <PositionBadge position={pick.position} />
-                                    <span className="text-gray-900">{pick.player_name}</span>
+                                    <button onClick={() => openPlayer(pick.player_id)} className="text-gray-900 hover:text-blue-600 hover:underline text-left">{pick.player_name}</button>
                                   </div>
                                   <span className="text-gray-600">
                                     {pick.weighted_points.toFixed(1)} pts
@@ -466,6 +469,7 @@ function OwnerDraftsTable({ drafts, ownerName }: { drafts: DraftGrade[]; ownerNa
 
 // Comparison view - show all owners in each draft
 function OwnerCard({ owner }: { owner: OwnerDraft }) {
+  const { openPlayer } = usePlayerModal();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -505,7 +509,7 @@ function OwnerCard({ owner }: { owner: OwnerDraft }) {
                       {pick.round}.{pick.pick_no}
                     </span>
                     <PositionBadge position={pick.position} />
-                    <span className="text-sm font-medium text-gray-900">{pick.player_name}</span>
+                    <button onClick={() => openPlayer(pick.player_id)} className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline text-left">{pick.player_name}</button>
                     {pick.team && (
                       <span className="text-xs text-gray-500 ml-1.5">({pick.team})</span>
                     )}
