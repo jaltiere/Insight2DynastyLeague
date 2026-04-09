@@ -162,6 +162,8 @@ GET /api/power-rankings
 GET /api/power-rankings/{season_year}
 ```
 
+Includes `rank_change` and `previous_rank` fields populated from the most recent weekly snapshot (both `null` before first snapshot is saved).
+
 **Response:**
 ```json
 {
@@ -181,11 +183,15 @@ GET /api/power-rankings/{season_year}
       "losses": 6,
       "ties": 0,
       "points_for": 2027.3,
-      "avg_roster_age": 27.4
+      "avg_roster_age": 27.4,
+      "rank_change": 2,
+      "previous_rank": 3
     }
   ]
 }
 ```
+
+`rank_change` is positive when a team moved up (e.g., `2` means rose 2 spots), negative when down, `0` for unchanged, `null` before any snapshot exists.
 
 ### Get Roster Breakdown
 ```
@@ -216,6 +222,75 @@ GET /api/power-rankings/{season_year}/roster/{roster_id}
 }
 ```
 
+### Get Rank Trajectory (Trends)
+```
+GET /api/power-rankings/{season_year}/trends
+```
+
+Returns all weekly snapshots for the season, formatted for the rank trajectory line chart. Returns empty `weeks` and `teams` arrays before first snapshot is saved (offseason-safe).
+
+**Response:**
+```json
+{
+  "season": 2026,
+  "weeks": [1, 2, 3, 4],
+  "teams": [
+    {
+      "roster_id": 7,
+      "display_name": "mbrenner00",
+      "team_name": "Macedonia Moose",
+      "current_rank": 1,
+      "ranks_by_week": [
+        { "week": 1, "rank": 3, "total_score": 74.1 },
+        { "week": 2, "rank": 2, "total_score": 75.8 },
+        { "week": 3, "rank": 1, "total_score": 77.92 }
+      ]
+    }
+  ]
+}
+```
+
+### Save Snapshot (Admin)
+```
+POST /api/power-rankings/snapshot?season_year={year}&week={week}
+Authorization: Bearer {CRON_SECRET}
+```
+
+Calculates and upserts a weekly snapshot for all teams. Called automatically by Tuesday sync; can also be triggered manually.
+
+**Response:**
+```json
+{ "status": "ok", "week": 5, "season_year": 2026, "teams_saved": 12 }
+```
+
+## Weekly Snapshot System
+
+### How Snapshots Are Saved
+- **Automatic**: Every Tuesday sync saves a snapshot for the week that just completed (same time recaps are generated)
+- **Manual**: `POST /api/power-rankings/snapshot?season_year={year}&week={week}` with CRON_SECRET auth
+- **Upsert**: Re-running for the same `(season_year, week, roster_id)` updates the existing row
+
+### Database Table: `power_ranking_snapshots`
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INT | Primary key |
+| `season_year` | INT | e.g. 2026 |
+| `week` | INT | NFL week number |
+| `roster_id` | INT | Sleeper roster ID |
+| `rank` | INT | Rank at snapshot time |
+| `total_score` | FLOAT | Overall score |
+| `current_season_score` | FLOAT | Current season component |
+| `roster_value_score` | FLOAT | Roster value component |
+| `historical_score` | FLOAT | Historical component |
+| `snapped_at` | DATETIME | When snapshot was saved |
+
+Unique constraint on `(season_year, week, roster_id)`.
+
+### Offseason Behavior
+- Snapshot table queries are non-fatal — if the table doesn't exist or returns no rows, the main rankings endpoint still loads normally with `rank_change: null`
+- The trend chart on the frontend only renders when at least one week of snapshot data exists
+- No new snapshots are saved during offseason (Tuesday sync skips recap/snapshot generation when `season_type == "off"`)
+
 ## Implementation Notes
 
 ### Database Queries
@@ -235,10 +310,21 @@ GET /api/power-rankings/{season_year}/roster/{roster_id}
 3. **Tie games**: Counted as 0.5 wins in win percentage
 4. **Empty rosters**: Returns 0 for roster value components
 5. **Division by zero**: Safe handling in all percentile calculations
+6. **Missing snapshot table**: Non-fatal; rankings load without trend data
 
 ## Frontend Visualization
 
-### Bar Chart
+### Rankings Table
+- **Trend column**: ▲N (green, moved up), ▼N (red, moved down), = (unchanged), — (no prior snapshot)
+- Click any row to open roster breakdown modal
+
+### Rank Trajectory Chart
+- Line chart (Recharts `LineChart`) showing each team's rank week-over-week
+- Y-axis reversed: rank #1 at the top
+- Only rendered when at least one week of snapshot data exists
+- One colored line per team (12 distinct colors)
+
+### Score Breakdown Bar Chart
 - Horizontal bars sorted by rank
 - Color-coded by performance:
   - 🟢 Green (#059669): Rank 1
@@ -246,11 +332,7 @@ GET /api/power-rankings/{season_year}/roster/{roster_id}
   - 🔵 Blue (#3B82F6): Ranks 4-6
   - 🟣 Indigo (#6366F1): Ranks 7-9
   - ⚪ Gray (#9CA3AF): Ranks 10+
-
-### Interactive Features
-- Click any bar or table row to view roster breakdown
-- Modal shows individual player power scores
-- Sortable by total score, current season, roster value, or historical
+- Click any bar to open roster breakdown modal
 
 ## Algorithm Philosophy
 
@@ -261,7 +343,16 @@ The power rankings balance:
 
 This weighting creates a **forward-looking dynasty ranking** that values both current competitiveness and long-term roster construction.
 
-## Recent Fixes
+## Recent Fixes & Enhancements
+
+### 2026-04-08: Added Weekly History & Trend Tracking (PR #58)
+- **Feature**: New `power_ranking_snapshots` table stores weekly rank snapshots per team
+- **Feature**: Trend arrows (▲/▼/=/—) added to rankings table
+- **Feature**: Rank trajectory line chart showing week-by-week movement
+- **Feature**: `GET /api/power-rankings/{season}/trends` endpoint
+- **Feature**: `POST /api/power-rankings/snapshot` admin endpoint
+- **Automation**: Tuesday sync auto-saves snapshots alongside recap generation
+- **Fix**: Snapshot queries are non-fatal (no CORS-breaking 500s if table missing)
 
 ### 2026-03-07: Fixed Rolling Window Query
 - **Issue**: Query ordered by `Matchup.id` instead of chronological order
