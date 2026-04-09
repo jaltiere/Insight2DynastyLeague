@@ -115,13 +115,16 @@ async def get_power_rankings_trends(
     season_year: int, db: AsyncSession = Depends(get_db)
 ):
     """Return weekly rank snapshots for all teams for the season line chart."""
-    # Get all snapshots for this season ordered by week
-    result = await db.execute(
-        select(PowerRankingSnapshot)
-        .where(PowerRankingSnapshot.season_year == season_year)
-        .order_by(PowerRankingSnapshot.week, PowerRankingSnapshot.rank)
-    )
-    snapshots = result.scalars().all()
+    # Non-fatal: if table doesn't exist yet (migration pending), return empty
+    try:
+        result = await db.execute(
+            select(PowerRankingSnapshot)
+            .where(PowerRankingSnapshot.season_year == season_year)
+            .order_by(PowerRankingSnapshot.week, PowerRankingSnapshot.rank)
+        )
+        snapshots = result.scalars().all()
+    except Exception:
+        return PowerRankingTrendsResponse(season=season_year, weeks=[], teams=[])
 
     if not snapshots:
         return PowerRankingTrendsResponse(season=season_year, weeks=[], teams=[])
@@ -235,8 +238,12 @@ async def _get_season_power_rankings(
         players = result.scalars().all()
         players_dict = {player.id: player for player in players}
 
-    # Load most-recent prior snapshot for rank-change calculation
-    prior_ranks = await _get_prior_snapshot_ranks(db, year)
+    # Load most-recent prior snapshot for rank-change calculation.
+    # Non-fatal: if the table doesn't exist yet (migration not run), skip trend data.
+    try:
+        prior_ranks = await _get_prior_snapshot_ranks(db, year)
+    except Exception:
+        prior_ranks = {}
 
     rankings = []
     all_rosters = [roster for roster, _ in rosters_with_users]
