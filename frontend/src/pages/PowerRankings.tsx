@@ -10,6 +10,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  LineChart,
+  Line,
+  Legend,
 } from 'recharts';
 import RosterBreakdownModal from '../components/RosterBreakdownModal';
 
@@ -29,12 +32,40 @@ interface PowerRankingTeam {
   ties: number;
   points_for: number;
   avg_roster_age: number;
+  rank_change: number | null;
+  previous_rank: number | null;
 }
 
 interface PowerRankingsResponse {
   season: number;
   rankings: PowerRankingTeam[];
 }
+
+interface SnapshotWeek {
+  week: number;
+  rank: number;
+  total_score: number;
+}
+
+interface TrendTeam {
+  roster_id: number;
+  display_name: string;
+  team_name: string | null;
+  current_rank: number;
+  ranks_by_week: SnapshotWeek[];
+}
+
+interface TrendsResponse {
+  season: number;
+  weeks: number[];
+  teams: TrendTeam[];
+}
+
+const TREND_COLORS = [
+  '#059669', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#10B981',
+  '#84CC16', '#06B6D4',
+];
 
 export default function PowerRankings() {
   const [selectedRosterId, setSelectedRosterId] = useState<number | null>(null);
@@ -43,6 +74,12 @@ export default function PowerRankings() {
   const { data, isLoading, error } = useQuery<PowerRankingsResponse>({
     queryKey: ['powerRankings'],
     queryFn: () => api.getPowerRankings(),
+  });
+
+  const { data: trendsData } = useQuery<TrendsResponse>({
+    queryKey: ['powerRankingsTrends', data?.season],
+    queryFn: () => api.getPowerRankingsTrends(data!.season),
+    enabled: !!data?.season,
   });
 
   const handleBarClick = (rosterId: number) => {
@@ -76,13 +113,27 @@ export default function PowerRankings() {
 
   const rankings = data?.rankings || [];
 
-  // Chart data transformation
   const chartData = rankings.map((team) => ({
     name: team.team_name || team.display_name,
     score: team.total_score,
     rosterId: team.roster_id,
     rank: team.rank,
   }));
+
+  // Build line chart data: one row per week, each team label as a key
+  const hasTrends = (trendsData?.weeks?.length ?? 0) > 0;
+  const trendChartData = hasTrends
+    ? trendsData!.weeks.map((week) => {
+        const row: Record<string, number | string> = { week: `Wk ${week}` };
+        for (const team of trendsData!.teams) {
+          const snap = team.ranks_by_week.find((s) => s.week === week);
+          if (snap) {
+            row[team.team_name || team.display_name] = snap.rank;
+          }
+        }
+        return row;
+      })
+    : [];
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -119,67 +170,16 @@ export default function PowerRankings() {
         </div>
       </div>
 
-      {/* Bar Chart */}
-      <div className="bg-white rounded-lg shadow mb-6 p-6">
-        <h2 className="text-xl font-semibold mb-4">Team Rankings</h2>
-        {chartData.length === 0 ? (
-          <p className="text-gray-600">No data available for chart</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={600}>
-            <BarChart
-              data={chartData}
-              layout="vertical"
-              margin={{ top: 20, right: 30, left: 150, bottom: 20 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" domain={[0, 100]} />
-              <YAxis dataKey="name" type="category" width={140} />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload?.[0]) {
-                    const data = payload[0].payload;
-                    return (
-                      <div className="bg-white p-3 border border-gray-200 rounded shadow">
-                        <p className="font-semibold">
-                          #{data.rank} {data.name}
-                        </p>
-                        <p className="text-sm">
-                          Score: {data.score.toFixed(2)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Click for details
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Bar
-                dataKey="score"
-                fill="#3B82F6"
-                cursor="pointer"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={getBarColor(entry.rank)}
-                    onClick={() => handleBarClick(entry.rosterId)}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-
       {/* Rankings Table */}
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
+      <div className="bg-white rounded-lg shadow overflow-x-auto mb-6">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">
+              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
                 Rank
+              </th>
+              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
+                Trend
               </th>
               <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
                 Team
@@ -217,6 +217,9 @@ export default function PowerRankings() {
                 <td className="px-4 py-3 text-sm font-bold text-center">
                   {team.rank}
                 </td>
+                <td className="px-4 py-3 text-sm text-center">
+                  <TrendArrow change={team.rank_change} />
+                </td>
                 <td className="px-4 py-3 text-sm font-medium">
                   {team.team_name || team.display_name}
                 </td>
@@ -248,6 +251,91 @@ export default function PowerRankings() {
         </table>
       </div>
 
+      {/* Rank Trajectory Chart (shown only when snapshots exist) */}
+      {hasTrends && (
+        <div className="bg-white rounded-lg shadow mb-6 p-6">
+          <h2 className="text-xl font-semibold mb-1">Rank Trajectory</h2>
+          <p className="text-sm text-gray-500 mb-4">Lower = better. Week-by-week snapshot.</p>
+          <ResponsiveContainer width="100%" height={420}>
+            <LineChart
+              data={trendChartData}
+              margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="week" />
+              <YAxis
+                reversed
+                domain={[1, rankings.length]}
+                tickCount={rankings.length}
+                allowDecimals={false}
+                label={{ value: 'Rank', angle: -90, position: 'insideLeft', offset: 10 }}
+              />
+              <Tooltip
+                formatter={(value: number, name: string) => [`#${value}`, name]}
+              />
+              <Legend />
+              {trendsData!.teams.map((team, idx) => (
+                <Line
+                  key={team.roster_id}
+                  type="monotone"
+                  dataKey={team.team_name || team.display_name}
+                  stroke={TREND_COLORS[idx % TREND_COLORS.length]}
+                  strokeWidth={2}
+                  dot={{ r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Bar Chart */}
+      <div className="bg-white rounded-lg shadow mb-6 p-6">
+        <h2 className="text-xl font-semibold mb-4">Score Breakdown</h2>
+        {chartData.length === 0 ? (
+          <p className="text-gray-600">No data available for chart</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={600}>
+            <BarChart
+              data={chartData}
+              layout="vertical"
+              margin={{ top: 20, right: 30, left: 150, bottom: 20 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" domain={[0, 100]} />
+              <YAxis dataKey="name" type="category" width={140} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (active && payload?.[0]) {
+                    const d = payload[0].payload;
+                    return (
+                      <div className="bg-white p-3 border border-gray-200 rounded shadow">
+                        <p className="font-semibold">
+                          #{d.rank} {d.name}
+                        </p>
+                        <p className="text-sm">Score: {d.score.toFixed(2)}</p>
+                        <p className="text-xs text-gray-500">Click for details</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Bar dataKey="score" fill="#3B82F6" cursor="pointer">
+                {chartData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={getBarColor(entry.rank)}
+                    onClick={() => handleBarClick(entry.rosterId)}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
       {/* Roster Breakdown Modal */}
       {modalOpen && selectedRosterId && data?.season && (
         <RosterBreakdownModal
@@ -260,10 +348,31 @@ export default function PowerRankings() {
   );
 }
 
+function TrendArrow({ change }: { change: number | null }) {
+  if (change === null || change === undefined) {
+    return <span className="text-gray-400 text-xs">—</span>;
+  }
+  if (change === 0) {
+    return <span className="text-gray-500 text-xs font-medium">=</span>;
+  }
+  if (change > 0) {
+    return (
+      <span className="text-green-600 font-semibold text-xs whitespace-nowrap">
+        ▲{change}
+      </span>
+    );
+  }
+  return (
+    <span className="text-red-500 font-semibold text-xs whitespace-nowrap">
+      ▼{Math.abs(change)}
+    </span>
+  );
+}
+
 function getBarColor(rank: number): string {
-  if (rank === 1) return '#059669'; // green-600
-  if (rank <= 3) return '#10B981'; // green-500
-  if (rank <= 6) return '#3B82F6'; // blue-500
-  if (rank <= 9) return '#6366F1'; // indigo-500
-  return '#9CA3AF'; // gray-400
+  if (rank === 1) return '#059669';
+  if (rank <= 3) return '#10B981';
+  if (rank <= 6) return '#3B82F6';
+  if (rank <= 9) return '#6366F1';
+  return '#9CA3AF';
 }

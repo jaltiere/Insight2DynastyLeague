@@ -188,11 +188,20 @@ class SyncService:
                     # Create recap service (will use mock mode if no API key)
                     recap_service = MatchupRecapService(self.db, settings.ANTHROPIC_API_KEY or "")
 
-                    # Tuesday: Generate previous week recaps + initial predictions
+                    # Tuesday: Generate previous week recaps + initial predictions + power ranking snapshot
                     if self._is_tuesday():
                         logger.info(f"Tuesday sync: generating recaps for week {current_week - 1} and predictions for week {current_week}")
                         await recap_service.generate_weekly_recaps(season_obj.id, current_week - 1)
                         await recap_service.generate_current_week_predictions(season_obj.id, current_week)
+
+                        # Save power ranking snapshot for the week that just completed
+                        try:
+                            from app.api.routes.power_rankings import _save_snapshot
+                            completed_week = current_week - 1
+                            logger.info(f"Tuesday sync: saving power ranking snapshot for week {completed_week}")
+                            await _save_snapshot(self.db, int(current_season), completed_week)
+                        except Exception as snap_err:
+                            logger.warning(f"Power ranking snapshot failed (non-fatal): {snap_err}")
 
                     # Thursday: Regenerate predictions with updated lineups
                     elif self._is_thursday():
