@@ -97,6 +97,8 @@ export const api = {
     apiClient.get(season ? `/power-rankings/${season}` : '/power-rankings').then(res => res.data),
   getRosterBreakdown: (season: number, rosterId: number) =>
     apiClient.get(`/power-rankings/${season}/roster/${rosterId}`).then(res => res.data),
+  getPowerRankingsTrends: (season: number) =>
+    apiClient.get(`/power-rankings/${season}/trends`).then(res => res.data),
 
   // Matchup Recaps
   getCurrentWeekMatchups: () =>
