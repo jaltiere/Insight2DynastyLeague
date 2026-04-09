@@ -271,7 +271,7 @@ export default function PowerRankings() {
                 label={{ value: 'Rank', angle: -90, position: 'insideLeft', offset: 10 }}
               />
               <Tooltip
-                formatter={(value: number | undefined, name: string) => [`#${value}`, name]}
+                formatter={(value: number | undefined, name: string | undefined) => [`#${value}`, name ?? '']}
               />
               <Legend />
               {trendsData!.teams.map((team, idx) => (
