@@ -65,20 +65,25 @@ Dynasty-focused scoring emphasizing young talent and roster construction.
 
 #### 1. Average Roster Age (15 points)
 - Younger rosters score higher (dynasty focus)
-- Peak scoring: ages 22-25
-- Formula: Normalized curve with bonus for young core
-- Example: 25.5 avg age → **13.2 points**
+- Age-to-score curve:
+  - ≤ 25: 1.0 → **15.0 points**
+  - 26–28: `1.0 - (age - 25) * 0.1` → linear decline
+  - 29+: `max(0.3, 0.7 - (age - 28) * 0.1)` → floor at 0.3 → **4.5 points minimum**
+- Formula: `age_score * 15`
+- Example: 25.5 avg age → 0.95 * 15 = **14.25 points**
 
-#### 2. Positional Value (15 points)
-- Weighted by player production scores
-- Counts elite players (power_score > threshold) at premium positions
-- QB/RB/WR valued higher than K/DEF
-- Formula: Based on distribution of top-tier players
+#### 2. Player Production Value (15 points)
+- Sums normalized production across all roster players
+- Each player contributes `min(1.0, avg_ppg / 20.0)` to the total
+- Total is capped at 15
+- Formula: `min(15, Σ min(1.0, player_avg_ppg / 20.0))`
+- Example: 12 starters averaging 10 ppg → 12 * 0.5 = 6.0, plus bench depth
 
 #### 3. Roster Depth (10 points)
-- Count of startable players (production_score > threshold)
-- Weighted by position scarcity
-- Example: 18 startable players → **8.5 points**
+- Count of startable players × 0.5, capped at 10
+- A player is **startable** if: age < 30, Active status, position is QB/RB/WR/TE
+- Formula: `min(10, startable_count * 0.5)`
+- Example: 18 startable players → min(10, 9.0) = **9.0 points**
 
 ### Player Power Scores
 
@@ -96,14 +101,16 @@ Individual player rankings based on:
 - RB: 9 points (scarcity)
 - WR: 8 points (volume)
 - TE: 7 points (positional advantage)
-- K/DEF: 3 points
+- DEF: 4 points
+- K: 3 points
+- Other: 5 points (default)
 
 **Production Score (max 10 pts):**
-- Based on rolling 15-game average points per game
-- 0 ppg → 0 points
+- Based on career average points per game
+- 0 ppg (active player) → 2.0 points; inactive → 0.5 points
 - 20+ ppg → 10 points
 - Scales linearly between 0-20 ppg
-- Formula: `min(10, (avg_ppg / 20) * 10)`
+- Formula: `min(10, (avg_ppg / 20) * 10)` when avg_ppg > 0
 
 **Total Player Power Score:**
 ```
@@ -113,25 +120,23 @@ Max: 30 points per player
 
 ## Historical Performance (20 points)
 
-Evaluates sustained success over the last 3 seasons.
+Evaluates all-time success based on season awards accumulated across the full league history.
 
 ### Components
 
-#### 1. Playoff Appearances (8 points)
-- Last 3 seasons
-- Formula: `(playoff_appearances / 3) * 8`
-- Example: 2 playoff appearances → 2/3 * 8 = **5.3 points**
+#### 1. Championships (8 points)
+- Counts all-time championship wins
+- Formula: `min(8, championships * 5)`
+- Example: 1 championship → 5.0 pts; 2 championships → 8.0 pts (capped)
 
-#### 2. Championships (8 points)
-- Last 3 seasons
-- Formula: `(championships / 3) * 8`
-- Example: 1 championship → 1/3 * 8 = **2.7 points**
+#### 2. Playoff Appearances (8 points)
+- Counts all-time playoff appearances (champion + division_winner awards)
+- Formula: `min(8, playoff_appearances * 2.67)`
+- Example: 1 appearance → 2.67 pts; 3 appearances → 8.0 pts (capped)
 
-#### 3. Consistency (4 points)
-- Based on standard deviation of win totals
-- Lower deviation = more consistent = higher score
-- Formula: `max(0, 4 - (stdev_wins / 3))`
-- Example: stdev of 2.5 wins → 4 - (2.5/3) = **3.2 points**
+#### 3. Consistency Baseline (2 points)
+- Flat 2-point baseline awarded to all teams
+- Ensures every team with a history has a non-zero historical score
 
 ## Example Calculation
 
@@ -144,15 +149,15 @@ Evaluates sustained success over the last 3 seasons.
 | Point Differential (+10) | (10+20)/5 | 6.0 |
 | Recent Form (2-1) | 0.667 * 5 | 3.3 |
 | **Current Season Total** | | **30.2** |
-| Average Roster Age (25.5) | | 13.2 |
-| Positional Value | | 12.5 |
-| Roster Depth (18 players) | | 9.2 |
-| **Roster Value Total** | | **34.9** |
-| Playoff Appearances (2/3) | 2/3 * 8 | 5.3 |
-| Championships (1/3) | 1/3 * 8 | 2.7 |
-| Consistency (stdev 2.5) | 4 - 2.5/3 | 3.2 |
-| **Historical Total** | | **11.2** |
-| **TOTAL POWER RANKING** | | **76.3** |
+| Average Roster Age (25.5) | (1.0 - 0.05) * 15 | 14.25 |
+| Player Production Value | Σ normalized ppg, capped 15 | 12.5 |
+| Roster Depth (18 startable) | min(10, 18 * 0.5) | 9.0 |
+| **Roster Value Total** | | **35.75** |
+| Championships (1) | min(8, 1 * 5) | 5.0 |
+| Playoff Appearances (3) | min(8, 3 * 2.67) | 8.0 |
+| Consistency Baseline | flat | 2.0 |
+| **Historical Total** | | **15.0** |
+| **TOTAL POWER RANKING** | | **80.95** |
 
 ## API Endpoints
 
@@ -174,6 +179,7 @@ Includes `rank_change` and `previous_rank` fields populated from the most recent
       "roster_id": 7,
       "user_id": "852976104321982464",
       "username": "mbrenner00",
+      "display_name": "Macedonia Moose Owner",
       "team_name": "Macedonia Moose",
       "total_score": 77.92,
       "current_season_score": 35.17,
@@ -320,9 +326,13 @@ Unique constraint on `(season_year, week, roster_id)`.
 
 ### Rank Trajectory Chart
 - Line chart (Recharts `LineChart`) showing each team's rank week-over-week
-- Y-axis reversed: rank #1 at the top
-- Only rendered when at least one week of snapshot data exists
-- One colored line per team (12 distinct colors)
+- Title: "Rank Trajectory" with subtitle "Lower = better. Week-by-week snapshot."
+- Only rendered when at least one week of snapshot data exists (`hasTrends` guard)
+- X-axis: week labels formatted as `Wk N` (e.g., "Wk 1", "Wk 5")
+- Y-axis: reversed so rank #1 appears at top; domain `[1, total_teams]`; integer ticks only
+- Tooltip: rank formatted as `#N` (e.g., "#1", "#3")
+- One colored line per team using 12 rotating distinct colors
+- Teams sorted by `current_rank` ascending in the legend
 
 ### Score Breakdown Bar Chart
 - Horizontal bars sorted by rank
@@ -344,6 +354,10 @@ The power rankings balance:
 This weighting creates a **forward-looking dynasty ranking** that values both current competitiveness and long-term roster construction.
 
 ## Recent Fixes & Enhancements
+
+### 2026-04-08: Fix Recharts Tooltip Formatter Type Error (PRs #59, #60)
+- **Fix**: `Formatter` type in Recharts expects `value: number | undefined` and `name: string | undefined`
+- **Impact**: Production frontend build was failing due to strict TypeScript type mismatch
 
 ### 2026-04-08: Added Weekly History & Trend Tracking (PR #58)
 - **Feature**: New `power_ranking_snapshots` table stores weekly rank snapshots per team

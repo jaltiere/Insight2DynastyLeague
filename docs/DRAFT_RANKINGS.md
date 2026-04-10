@@ -248,7 +248,7 @@ GET /api/draft-grades?draft_type={type}&owner_id={id}
       "owners": [
         {
           "user_id": "user1",
-          "username": "Owner One",
+          "username": "Owner One",   // display_name if set, otherwise username
           "avatar": null,
           "total_value": 1875.8,
           "num_picks": 25,
@@ -417,4 +417,4 @@ Potential improvements to consider:
 
 **Last Updated**: March 2026
 **Algorithm Version**: 1.0
-**Related Documentation**: `TRADE_GRADING.md`
+**Related Documentation**: [TRADE_GRADING.md](TRADE_GRADING.md)
