@@ -90,7 +90,7 @@ Sorted by lopsidedness ascending (most balanced first). Since anomalies have lop
 
 ### 1. Player Value Calculation
 
-Each player's value is the **weighted sum of all points scored** after the trade date, weighted by whether they were started or benched.
+Each player's value is the **weighted sum of all points scored** after the trade date, weighted by whether they were started or benched. Points are counted across **all rosters** — if a player was later re-traded, the receiving team still gets full credit for the player's entire post-trade production. This ensures the grade reflects the actual value of what was acquired, not just what was held.
 
 #### Weighting Formula
 
@@ -98,7 +98,7 @@ Each player's value is the **weighted sum of all points scored** after the trade
 STARTER_WEIGHT = 1.5
 BENCH_WEIGHT = 0.1
 
-player_value = Σ (points × weight)
+player_value = Σ (points × weight)        # across ALL rosters, all weeks after trade
   where weight = STARTER_WEIGHT if started, else BENCH_WEIGHT
 ```
 
@@ -134,13 +134,17 @@ The replacement factor accounts for how well a team filled the hole left by trad
 ```python
 REPLACEMENT_WINDOW = 4  # weeks before/after trade
 
-before_avg = average position points in weeks [trade_week - 4, trade_week]
-after_avg = average position points in weeks [trade_week + 1, trade_week + 4]
+# before: [trade_week - 3, trade_week] inclusive (4 weeks, floor at week 1)
+before_avg = average position points in weeks [max(1, trade_week-3) … trade_week]
+# after:  [trade_week + 1, trade_week + 4] inclusive (4 weeks)
+after_avg = average position points in weeks [trade_week+1 … trade_week+4]
 
-if after_avg >= before_avg:
-    replacement_factor = 0.5  # Replaced perfectly
+if not before_data or not after_data:
+    replacement_factor = 1.0  # not enough data
 elif before_avg <= 0:
-    replacement_factor = 1.0  # No baseline
+    replacement_factor = 1.0  # no baseline
+elif after_avg >= before_avg:
+    replacement_factor = 0.5  # replaced perfectly
 else:
     replacement_factor = 1.0 - (after_avg / before_avg) × 0.5
 ```
@@ -423,6 +427,46 @@ For accurate grading, the algorithm requires:
   ]
 }
 ```
+
+## API Endpoints
+
+### Get All Trade Grades
+
+```http
+GET /api/trade-grades?season={year}&sort={mode}&owner_id={id}
+```
+
+**Query Parameters**:
+- `season` (optional): Filter to a specific season year
+- `sort` (optional, default `lopsided`): Sort mode — `lopsided`, `recent`, or `even`
+- `owner_id` (optional): Filter to trades involving a specific owner
+
+**Sort modes**:
+- `lopsided` (default): Winner's capped grade descending, then raw lopsidedness as tiebreaker. Anomalies always last.
+- `recent`: Trade date descending
+- `even`: Lopsidedness ascending (most balanced first); anomalies naturally sink to bottom
+
+**Response**:
+```json
+{
+  "trades": [ /* array of trade objects — see API Response Structure above */ ]
+}
+```
+
+### Get Single Trade Grade
+
+```http
+GET /api/trade-grades/{trade_id}
+```
+
+Returns a single trade object (same shape as items in the `trades` array above). Returns 404 if not found or not a completed trade.
+
+## Recent Fixes & Enhancements
+
+### 2026: Full Career Credit for Re-Traded Players (PR #54)
+- **Fix**: Player value is now counted across ALL rosters, not just the receiving team's roster
+- **Why**: Teams that acquired a star player and later re-traded them were unfairly penalized — the player's production after the re-trade was lost from the original trade's grade
+- **Result**: Trade grades now correctly reflect the full value of what was acquired
 
 ## Implementation Files
 

@@ -197,12 +197,12 @@ After frontend deployment, update backend CORS_ORIGINS:
 
 The repository includes two GitHub Actions workflows:
 
-1. **[.github/workflows/deploy.yml](file:///d:/Projects/Insight2DynastyLeague/.github/workflows/deploy.yml)** - Runs on every push to `main`
+1. **[.github/workflows/deploy.yml](../.github/workflows/deploy.yml)** - Runs on every push to `main`
    - Tests backend (pytest)
    - Builds frontend
    - Railway auto-deploys after tests pass
 
-2. **[.github/workflows/scheduled-sync.yml](file:///d:/Projects/Insight2DynastyLeague/.github/workflows/scheduled-sync.yml)** - Runs daily at 6 AM UTC
+2. **[.github/workflows/scheduled-sync.yml](../.github/workflows/scheduled-sync.yml)** - Runs daily at 6 AM UTC
    - Triggers `/api/cron/sync` endpoint
    - Syncs latest data from Sleeper API
 

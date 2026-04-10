@@ -424,7 +424,7 @@ Test on multiple viewport sizes:
 - Backend requires `cryptography` package for MySQL 8.0 authentication
 - Sync order matters: players must be synced before drafts (foreign key constraint)
 
-For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+For detailed deployment instructions, see [DEPLOYMENT.md](./docs/DEPLOYMENT.md).
 
 ### Common Deployment Issues
 

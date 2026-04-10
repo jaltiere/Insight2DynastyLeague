@@ -9,7 +9,7 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 ## Features
 
 - **Current Standings** - Real-time league standings and playoff brackets
-- **Power Rankings** - Dynasty-focused rankings balancing current performance (40%), roster value/age (40%), and historical success (20%) - [Algorithm Details](./POWER_RANKINGS.md)
+- **Power Rankings** - Dynasty-focused rankings balancing current performance (40%), roster value/age (40%), and historical success (20%) - [Algorithm Details](./docs/POWER_RANKINGS.md)
 - **Player Statistics** - Comprehensive searchable player database
 - **Head-to-Head History** - Owner vs owner matchup records
 - **Owner Records** - Historical performance and season breakdowns
@@ -41,7 +41,7 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 - **CI/CD**: GitHub Actions for testing, Railway for deployment
 - **Domain**: Custom domain via GoDaddy
 
-📖 **For deployment instructions**, see [DEPLOYMENT.md](./DEPLOYMENT.md)
+📖 **For deployment instructions**, see [DEPLOYMENT.md](./docs/DEPLOYMENT.md)
 
 ## Getting Started
 
@@ -274,7 +274,7 @@ The application is deployed to Railway with:
 - **Database**: Railway MySQL 8.0
 - **Automated Sync**: GitHub Actions runs daily at 6 AM UTC
 
-For complete deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+For complete deployment instructions, see [DEPLOYMENT.md](./docs/DEPLOYMENT.md).
 
 ### Quick Deployment Checklist
 
