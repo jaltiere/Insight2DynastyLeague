@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 
@@ -50,11 +50,6 @@ interface H2HTrade {
   sides: Record<string, H2HTradeSide>;
 }
 
-interface H2HData {
-  trades: H2HTrade[];
-  summary: Record<string, { wins: number; typical_grade: string | null }> & { total_trades: number } | null;
-}
-
 // Classification → window label + color
 const CLASSIFICATION_STYLE: Record<string, { label: string; color: string }> = {
   'Win Now':          { label: 'Win Now',          color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
@@ -100,11 +95,6 @@ const POSITION_COLORS: Record<string, string> = {
   RDP: 'bg-yellow-500',
 };
 
-const TIER_LABEL: Record<string, string> = {
-  early: 'Early',
-  mid: 'Mid',
-  late: 'Late',
-};
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
@@ -270,63 +260,6 @@ function PickSelector({
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-// ─── Player search with debounce ──────────────────────────────────────────────
-
-function PlayerSearch({
-  addedIds,
-  onAdd,
-}: {
-  addedIds: Set<string>;
-  onAdd: (player: TradePlayer) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setDebouncedQuery(query), 300);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [query]);
-
-  const { data, isFetching } = useQuery({
-    queryKey: ['tradeCalcSearch', debouncedQuery],
-    queryFn: () => api.searchTradeCalcPlayers(debouncedQuery),
-    enabled: debouncedQuery.length >= 2,
-    staleTime: 60_000,
-  });
-
-  return (
-    <div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search any player…"
-        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      {debouncedQuery.length >= 2 && (
-        <div className="mt-2 space-y-1">
-          {isFetching && (
-            <p className="text-xs text-gray-400 px-1">Searching…</p>
-          )}
-          {!isFetching && data?.players?.length === 0 && (
-            <p className="text-xs text-gray-400 px-1">No players found.</p>
-          )}
-          {data?.players?.map((p: TradePlayer) => (
-            <RosterPlayerRow
-              key={p.player_id}
-              player={p}
-              added={addedIds.has(p.player_id)}
-              onToggle={() => !addedIds.has(p.player_id) && onAdd(p)}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
