@@ -11,6 +11,7 @@ from app.models.season_award import SeasonAward
 from app.models.matchup_player_point import MatchupPlayerPoint
 from app.models.matchup_recap import MatchupRecap
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
+from app.models.player_value import PlayerValue
 
 __all__ = [
     "League",
@@ -26,4 +27,5 @@ __all__ = [
     "MatchupPlayerPoint",
     "MatchupRecap",
     "PowerRankingSnapshot",
+    "PlayerValue",
 ]

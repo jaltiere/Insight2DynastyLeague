@@ -20,6 +20,7 @@ const navGroups: NavGroup[] = [
       { to: '/matchup-recaps', label: 'Matchups' },
       { to: '/playoffs', label: 'Playoffs' },
       { to: '/power-rankings', label: 'Power Rankings' },
+      { to: '/trade-calculator', label: 'Trade Calculator' },
     ],
   },
   {

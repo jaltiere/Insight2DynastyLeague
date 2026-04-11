@@ -341,6 +341,18 @@ No `?force=true` needed — the season will be active by then. Update the `seaso
 - `generated_at` timestamp tracks when each recap was last generated
 - No automatic expiration — recaps persist until explicitly regenerated
 
+## Trade Calculator
+
+A roster-aware trade evaluation tool using KTC values as the primary source, with league-specific overlays:
+- **KTC values**: scraped from `keeptradecut.com/dynasty-rankings?picks=1` on each sync, stored in `player_values` table
+- **Pick tier**: estimated from original team's current record (worst record = Early, best = Late)
+- **League PPG delta**: each player's PPG vs league-wide position average in this league's scoring
+- **Roster fit**: based on receiving team's classification (Win Now / Rebuilding / etc.)
+- **Fair zone**: ±6% from 50/50 split
+- **Scoring format**: controlled by `KTC_SCORING_FORMAT` in `config.py` (default `"1qb"`)
+
+For full documentation, see [TRADE_CALCULATOR.md](./docs/TRADE_CALCULATOR.md).
+
 ## Data Sync Strategy
 - Initial sync: Pull all historical data from Sleeper
 - Daily sync during season: Update current week matchups
