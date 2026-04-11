@@ -17,6 +17,7 @@ import Playoffs from './pages/Playoffs';
 import MatchupRecaps from './pages/MatchupRecaps';
 import Newsletter from './pages/Newsletter';
 import RosterAnalysis from './pages/RosterAnalysis';
+import TradeCalculator from './pages/TradeCalculator';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ function App() {
               <Route path="matchup-recaps" element={<MatchupRecaps />} />
               <Route path="newsletter" element={<Newsletter />} />
               <Route path="roster-analysis" element={<RosterAnalysis />} />
+              <Route path="trade-calculator" element={<TradeCalculator />} />
             </Route>
           </Routes>
         </BrowserRouter>

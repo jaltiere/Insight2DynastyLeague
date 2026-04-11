@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # API Rate Limiting
     SLEEPER_RATE_LIMIT: int = 900  # Stay under 1000/min
 
+    # Trade Calculator
+    # "1qb" uses oneQBValues, "superflex" uses superflexValues from KTC
+    KTC_SCORING_FORMAT: str = "1qb"
+
     # Security
     CRON_SECRET: str = "change-me-in-production"  # For securing scheduled sync endpoints
 

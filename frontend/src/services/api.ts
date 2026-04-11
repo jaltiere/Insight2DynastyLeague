@@ -117,6 +117,15 @@ export const api = {
   // Roster Analysis
   getRosterAnalysis: () => apiClient.get('/roster-analysis').then(res => res.data),
 
+  // Trade Calculator
+  getTradeCalcOwners: () => apiClient.get('/trade-calculator/owners').then(res => res.data),
+  getTradeCalcRoster: (userId: string) => apiClient.get(`/trade-calculator/roster/${userId}`).then(res => res.data),
+  getTradeCalcRosterPicks: (userId: string) => apiClient.get(`/trade-calculator/roster-picks/${userId}`).then(res => res.data),
+  searchTradeCalcPlayers: (q: string) => apiClient.get('/trade-calculator/search', { params: { q } }).then(res => res.data),
+  getPickValues: () => apiClient.get('/trade-calculator/pick-values').then(res => res.data),
+  getH2HTrades: (userIdA: string, userIdB: string) =>
+    apiClient.get(`/trade-calculator/h2h-trades/${userIdA}/${userIdB}`).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

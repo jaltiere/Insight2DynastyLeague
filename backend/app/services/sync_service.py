@@ -237,6 +237,16 @@ class SyncService:
             # Sync players (this is a large dataset)
             await self._sync_players(int(current_season))
 
+            # Refresh KTC dynasty values (player and pick values for trade calculator)
+            try:
+                from app.services.ktc_service import refresh_ktc_values
+                from app.config import get_settings
+                _settings = get_settings()
+                ktc_result = await refresh_ktc_values(self.db, scoring_format=_settings.KTC_SCORING_FORMAT)
+                logger.info(f"KTC value refresh: {ktc_result}")
+            except Exception as ktc_err:
+                logger.warning(f"KTC value refresh failed (non-fatal): {ktc_err}")
+
             await self.db.commit()
 
             return {
