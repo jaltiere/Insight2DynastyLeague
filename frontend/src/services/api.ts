@@ -126,6 +126,9 @@ export const api = {
   getH2HTrades: (userIdA: string, userIdB: string) =>
     apiClient.get(`/trade-calculator/h2h-trades/${userIdA}/${userIdB}`).then(res => res.data),
 
+  // Draft Picks
+  getFutureDraftPicks: () => apiClient.get('/draft-picks/future').then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

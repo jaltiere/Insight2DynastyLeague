@@ -38,6 +38,7 @@ const navGroups: NavGroup[] = [
       { to: '/league-history', label: 'League History' },
       { to: '/records', label: 'Records' },
       { to: '/drafts', label: 'Drafts' },
+      { to: '/future-draft-picks', label: 'Future Picks' },
       { to: '/draft-rankings', label: 'Draft Rankings' },
     ],
   },
