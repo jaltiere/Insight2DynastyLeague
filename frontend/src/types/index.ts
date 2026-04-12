@@ -136,6 +136,32 @@ export interface PlayerDraftHistory {
   owner: Partial<PlayerOwner>;
 }
 
+// Future Draft Pick Tracker types
+export interface FuturePickOwner {
+  roster_id: number;
+  user_id: string | null;
+  display_name: string;
+  avatar: string | null;
+}
+
+export interface FutureDraftPick {
+  season: number;
+  round: number;
+  original_roster_id: number;
+  original_owner: FuturePickOwner;
+  current_roster_id: number;
+  current_owner: FuturePickOwner;
+  is_traded: boolean;
+}
+
+export interface FutureDraftPicksResponse {
+  current_season: number;
+  future_seasons: number[];
+  num_rounds: number;
+  owners: FuturePickOwner[];
+  picks: FutureDraftPick[];
+}
+
 export interface PlayerProfile {
   id: string;
   first_name: string;

@@ -18,6 +18,7 @@ import MatchupRecaps from './pages/MatchupRecaps';
 import Newsletter from './pages/Newsletter';
 import RosterAnalysis from './pages/RosterAnalysis';
 import TradeCalculator from './pages/TradeCalculator';
+import FutureDraftPicks from './pages/FutureDraftPicks';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,7 @@ function App() {
               <Route path="newsletter" element={<Newsletter />} />
               <Route path="roster-analysis" element={<RosterAnalysis />} />
               <Route path="trade-calculator" element={<TradeCalculator />} />
+              <Route path="future-draft-picks" element={<FutureDraftPicks />} />
             </Route>
           </Routes>
         </BrowserRouter>
