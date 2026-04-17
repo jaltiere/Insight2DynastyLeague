@@ -12,7 +12,7 @@
 | Matchup Recaps | AI-generated recaps + predictions (Claude Haiku) |
 | Newsletter Generator | Weekly newsletter from recap data |
 | Power Rankings | History + trend tracking with weekly snapshots |
-| Roster Analysis | Dashboard with team classification (Win Now / Rebuilding) |
+| Roster Analysis | Dashboard with team classification, Age Curve analysis, and Positional Scarcity view |
 | Taxi Squads | Per-team taxi squad view |
 | Trade Grades | Algorithm-based trade evaluation with history |
 | Trade Calculator | KTC-based roster-aware trade tool with pick tiers + PPG delta |
@@ -36,8 +36,8 @@
 
 ### Player & Roster Tools
 - [ ] **Free agent market** — players available across all rosters, sorted by value
-- [ ] **Age curve analysis** — roster age composition and dynasty window projection
-- [ ] **Positional scarcity view** — how each team compares at each position
+- [X] **Age curve analysis** — roster age composition and dynasty window projection
+- [X] **Positional scarcity view** — how each team compares at each position
 
 ### Historical Records
 - [X] **Scoring records** — highest/lowest single-week team scores all time
