@@ -132,6 +132,10 @@ export const api = {
   // Team Records
   getTeamRecords: () => apiClient.get('/team-records').then(res => res.data),
 
+  // Free Agents
+  getFreeAgents: (params?: { search?: string; position?: string; limit?: number; offset?: number }) =>
+    apiClient.get('/free-agents', { params }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
