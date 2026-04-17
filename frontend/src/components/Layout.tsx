@@ -30,6 +30,7 @@ const navGroups: NavGroup[] = [
       { to: '/roster-analysis', label: 'Rosters' },
       { to: '/head-to-head', label: 'H2H' },
       { to: '/taxi-squads', label: 'Taxi' },
+      { to: '/free-agents', label: 'Free Agents' },
     ],
   },
   {
