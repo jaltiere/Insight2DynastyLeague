@@ -5,6 +5,7 @@ from statistics import stdev as calc_stdev
 from typing import List, Dict, Any, Tuple, Optional
 from app.database import get_db
 from app.models import Season, Roster, User, Player, Matchup, SeasonAward, MatchupPlayerPoint
+from app.models.player_value import PlayerValue
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
 from app.schemas.power_rankings import (
     PowerRankingsResponse,
@@ -80,9 +81,11 @@ async def get_roster_breakdown(
         )
 
     result = await db.execute(select(Player).where(Player.id.in_(player_ids)))
-    players = result.scalars().all()
+    players = list(result.scalars().all())
 
     player_stats = await _calculate_player_stats(player_ids, db)
+    ktc_values = await _fetch_ktc_values(player_ids, db)
+    position_averages = _calculate_position_averages(players, player_stats)
 
     player_scores = []
     total_age = 0
@@ -90,7 +93,11 @@ async def get_roster_breakdown(
 
     for player in players:
         avg_points = player_stats.get(player.id, 0.0)
-        power_score_data = await _calculate_player_power_score(player, avg_points, db)
+        ktc_value = ktc_values.get(player.id, 0.0)
+        pos_avg = position_averages.get(player.position or "OTH", 0.0)
+        power_score_data = await _calculate_player_power_score(
+            player, avg_points, db, ktc_value=ktc_value, position_avg=pos_avg
+        )
         player_scores.append(power_score_data)
 
         if player.age:
@@ -611,6 +618,18 @@ def _is_startable(player: Player) -> bool:
     return player.position in ["QB", "RB", "WR", "TE"]
 
 
+async def _fetch_ktc_values(player_ids: List[str], db: AsyncSession) -> Dict[str, float]:
+    """Return {player_id: ktc_value} for the given player IDs."""
+    if not player_ids:
+        return {}
+    result = await db.execute(
+        select(PlayerValue.player_id, PlayerValue.value).where(
+            PlayerValue.player_id.in_(player_ids)
+        )
+    )
+    return {row.player_id: float(row.value) for row in result if row.player_id}
+
+
 async def _calculate_player_stats(
     player_ids: List[str], db: AsyncSession, limit: int = 15
 ) -> Dict[str, float]:
@@ -648,55 +667,76 @@ async def _calculate_player_stats(
     return player_stats
 
 
+def _calculate_position_averages(
+    players: List[Player], player_stats: Dict[str, float]
+) -> Dict[str, float]:
+    """Return average PPG per position across all provided players with recorded production."""
+    pos_ppg: Dict[str, List[float]] = {}
+    for player in players:
+        pos = player.position or "OTH"
+        ppg = player_stats.get(player.id, 0.0)
+        if ppg > 0:
+            pos_ppg.setdefault(pos, []).append(ppg)
+    return {pos: sum(vals) / len(vals) for pos, vals in pos_ppg.items() if vals}
+
+
 async def _calculate_player_power_score(
-    player: Player, avg_points_per_game: float, db: AsyncSession
+    player: Player,
+    avg_points_per_game: float,
+    db: AsyncSession,
+    ktc_value: float = 0.0,
+    position_avg: float = 0.0,
 ) -> PlayerPowerScore:
-    """Calculate individual player power score based on age, position, and production."""
-    age_score = 0.0
-    position_score = 0.0
-    production_score = 0.0
+    """Calculate individual player power score: KTC + league production + age.
 
-    # 1. Age component (max 10)
+    Formula (max 30):
+      - League production vs position average (max 14): how does this player score
+        compared to other players at their position in *this* league's format
+      - KTC dynasty value (max 8): market-consensus dynasty worth
+      - Age (max 8): dynasty longevity tiebreaker
+
+    Fallback when no KTC value: position (max 5) replaces KTC component.
+    """
+    # --- Age component (max 8) ---
     if player.age:
-        if player.age <= 25:
-            age_score = 10.0
-        elif player.age <= 27:
-            age_score = 8.0
-        elif player.age <= 29:
-            age_score = 5.0
-        else:
-            age_score = 2.0
+        effective_age = player.age
     elif player.years_exp:
-        estimated_age = 22 + player.years_exp
-        if estimated_age <= 25:
-            age_score = 10.0
-        elif estimated_age <= 27:
-            age_score = 8.0
-        elif estimated_age <= 29:
-            age_score = 5.0
-        else:
-            age_score = 2.0
+        effective_age = 22 + player.years_exp
     else:
-        age_score = 5.0
+        effective_age = 27
 
-    # 2. Positional value (max 10)
-    position_values = {
-        "QB": 10.0,
-        "RB": 9.0,
-        "WR": 8.0,
-        "TE": 7.0,
-        "K": 3.0,
-        "DEF": 4.0,
-    }
-    position_score = position_values.get(player.position, 5.0)
+    if effective_age <= 23:
+        age_score = 8.0
+    elif effective_age <= 25:
+        age_score = 7.0
+    elif effective_age <= 27:
+        age_score = 5.5
+    elif effective_age <= 29:
+        age_score = 3.5
+    else:
+        age_score = 1.5
 
-    # 3. Production (max 10)
-    if avg_points_per_game > 0:
+    # --- League production vs position average (max 10) ---
+    if avg_points_per_game > 0 and position_avg > 0:
+        # Ratio to position average; average scorer = 5/10, elite (2x avg) = 10
+        ratio = avg_points_per_game / position_avg
+        production_score = min(10.0, ratio * 5.0)
+    elif avg_points_per_game > 0:
+        # No position average available — fall back to absolute PPG scale
         production_score = min(10.0, (avg_points_per_game / 20.0) * 10.0)
     else:
-        production_score = 2.0 if player.status == "Active" else 0.5
+        production_score = 0.5 if player.status == "Active" else 0.0
 
-    power_score = age_score + position_score + production_score
+    # --- KTC dynasty value (max 12) ---
+    if ktc_value > 0:
+        ktc_component = min(12.0, (ktc_value / 10000.0) * 12.0)
+        position_score = 0.0
+    else:
+        # Fallback: low floor for unranked players (KTC not ranking them is itself a signal)
+        ktc_component = 1.5
+        position_score = 0.0
+
+    power_score = ktc_component + production_score + age_score
 
     return PlayerPowerScore(
         player_id=player.id,

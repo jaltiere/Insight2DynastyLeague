@@ -9,6 +9,8 @@ from app.api.routes.power_rankings import (
     _calculate_player_stats,
     _calculate_player_power_score,
     _calculate_avg_roster_age,
+    _calculate_position_averages,
+    _fetch_ktc_values,
 )
 
 router = APIRouter()
@@ -72,8 +74,11 @@ async def get_roster_analysis(db: AsyncSession = Depends(get_db)):
         for player in result.scalars().all():
             players_dict[player.id] = player
 
-    # Bulk-calculate avg points per game for every player (single DB round-trip)
+    # Bulk-calculate avg points per game, KTC values, and league-wide position averages
     player_stats = await _calculate_player_stats(list(all_player_ids), db)
+    ktc_values = await _fetch_ktc_values(list(all_player_ids), db)
+    all_players_list = list(players_dict.values())
+    position_averages = _calculate_position_averages(all_players_list, player_stats)
 
     # Build per-team data
     teams = []
@@ -89,7 +94,11 @@ async def get_roster_analysis(db: AsyncSession = Depends(get_db)):
 
         for player in roster_players:
             avg_pts = player_stats.get(player.id, 0.0)
-            score_obj = await _calculate_player_power_score(player, avg_pts, db)
+            ktc_value = ktc_values.get(player.id, 0.0)
+            pos_avg = position_averages.get(player.position or "OTH", 0.0)
+            score_obj = await _calculate_player_power_score(
+                player, avg_pts, db, ktc_value=ktc_value, position_avg=pos_avg
+            )
             total_score += score_obj.power_score
 
             pos = player.position or "OTH"
