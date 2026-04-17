@@ -35,7 +35,7 @@
 - [X] **Save/share trades** — permalink to a trade scenario
 
 ### Player & Roster Tools
-- [ ] **Free agent market** — players available across all rosters, sorted by value
+- [X] **Free agent market** — players available across all rosters, sorted by value
 - [X] **Age curve analysis** — roster age composition and dynasty window projection
 - [X] **Positional scarcity view** — how each team compares at each position
 
