@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -658,13 +659,68 @@ function H2HTradeList({
   );
 }
 
+// ─── Permalink helpers ────────────────────────────────────────────────────────
+
+interface PermalinkState {
+  a: string | null;
+  b: string | null;
+  aa: TradeSideAsset[];
+  ba: TradeSideAsset[];
+}
+
+function encodePermalink(state: PermalinkState): string {
+  return btoa(encodeURIComponent(JSON.stringify(state)));
+}
+
+function decodePermalink(encoded: string): PermalinkState | null {
+  try {
+    return JSON.parse(decodeURIComponent(atob(encoded)));
+  } catch {
+    return null;
+  }
+}
+
+function getInitialPermalinkState(): PermalinkState | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get('t');
+    if (!encoded) return null;
+    return decodePermalink(encoded);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TradeCalculator() {
-  const [sideAOwnerId, setSideAOwnerId] = useState<string | null>(null);
-  const [sideBOwnerId, setSideBOwnerId] = useState<string | null>(null);
-  const [sideAAssets, setSideAAssets] = useState<TradeSideAsset[]>([]);
-  const [sideBAssets, setSideBAssets] = useState<TradeSideAsset[]>([]);
+  const init = useMemo(() => getInitialPermalinkState(), []);
+  const [sideAOwnerId, setSideAOwnerId] = useState<string | null>(init?.a ?? null);
+  const [sideBOwnerId, setSideBOwnerId] = useState<string | null>(init?.b ?? null);
+  const [sideAAssets, setSideAAssets] = useState<TradeSideAsset[]>(init?.aa ?? []);
+  const [sideBAssets, setSideBAssets] = useState<TradeSideAsset[]>(init?.ba ?? []);
+
+  const [, setSearchParams] = useSearchParams();
+  const [copied, setCopied] = useState(false);
+
+  // Sync state to URL so the current scenario is always shareable
+  useEffect(() => {
+    const hasContent =
+      sideAOwnerId || sideBOwnerId || sideAAssets.length > 0 || sideBAssets.length > 0;
+    if (hasContent) {
+      const encoded = encodePermalink({ a: sideAOwnerId, b: sideBOwnerId, aa: sideAAssets, ba: sideBAssets });
+      setSearchParams({ t: encoded }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  }, [sideAOwnerId, sideBOwnerId, sideAAssets, sideBAssets, setSearchParams]);
+
+  function handleShare() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -794,11 +850,36 @@ export default function TradeCalculator() {
   return (
     <div className="container mx-auto px-4 py-6 max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Trade Calculator</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Values powered by KeepTradeCut dynasty rankings (1QB).
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Trade Calculator</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Values powered by KeepTradeCut dynasty rankings (1QB).
+          </p>
+        </div>
+        <button
+          onClick={handleShare}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border transition flex-shrink-0 mt-1
+            border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300
+            hover:bg-gray-100 dark:hover:bg-gray-700"
+          title="Copy shareable link"
+        >
+          {copied ? (
+            <>
+              <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="text-green-600 dark:text-green-400">Copied!</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              Share
+            </>
+          )}
+        </button>
       </div>
 
       {/* Two-column side panels */}
