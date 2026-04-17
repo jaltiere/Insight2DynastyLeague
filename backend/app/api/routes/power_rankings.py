@@ -5,6 +5,7 @@ from statistics import stdev as calc_stdev
 from typing import List, Dict, Any, Tuple, Optional
 from app.database import get_db
 from app.models import Season, Roster, User, Player, Matchup, SeasonAward, MatchupPlayerPoint
+from app.models.player_value import PlayerValue
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
 from app.schemas.power_rankings import (
     PowerRankingsResponse,
@@ -83,6 +84,7 @@ async def get_roster_breakdown(
     players = result.scalars().all()
 
     player_stats = await _calculate_player_stats(player_ids, db)
+    ktc_values = await _fetch_ktc_values(player_ids, db)
 
     player_scores = []
     total_age = 0
@@ -90,7 +92,8 @@ async def get_roster_breakdown(
 
     for player in players:
         avg_points = player_stats.get(player.id, 0.0)
-        power_score_data = await _calculate_player_power_score(player, avg_points, db)
+        ktc_value = ktc_values.get(player.id, 0.0)
+        power_score_data = await _calculate_player_power_score(player, avg_points, db, ktc_value=ktc_value)
         player_scores.append(power_score_data)
 
         if player.age:
@@ -611,6 +614,18 @@ def _is_startable(player: Player) -> bool:
     return player.position in ["QB", "RB", "WR", "TE"]
 
 
+async def _fetch_ktc_values(player_ids: List[str], db: AsyncSession) -> Dict[str, float]:
+    """Return {player_id: ktc_value} for the given player IDs."""
+    if not player_ids:
+        return {}
+    result = await db.execute(
+        select(PlayerValue.player_id, PlayerValue.value).where(
+            PlayerValue.player_id.in_(player_ids)
+        )
+    )
+    return {row.player_id: float(row.value) for row in result if row.player_id}
+
+
 async def _calculate_player_stats(
     player_ids: List[str], db: AsyncSession, limit: int = 15
 ) -> Dict[str, float]:
@@ -649,54 +664,67 @@ async def _calculate_player_stats(
 
 
 async def _calculate_player_power_score(
-    player: Player, avg_points_per_game: float, db: AsyncSession
+    player: Player,
+    avg_points_per_game: float,
+    db: AsyncSession,
+    ktc_value: float = 0.0,
 ) -> PlayerPowerScore:
-    """Calculate individual player power score based on age, position, and production."""
+    """Calculate individual player power score using KTC dynasty value + production.
+
+    Formula (max ~30):
+      - KTC component (max 20): primary signal — encodes age, position, and dynasty market value
+      - Production component (max 10): in-league PPG performance
+    Fallback when no KTC value: age (max 8) + position (max 7) + production (max 10).
+    """
     age_score = 0.0
     position_score = 0.0
     production_score = 0.0
 
-    # 1. Age component (max 10)
-    if player.age:
-        if player.age <= 25:
-            age_score = 10.0
-        elif player.age <= 27:
-            age_score = 8.0
-        elif player.age <= 29:
-            age_score = 5.0
-        else:
-            age_score = 2.0
-    elif player.years_exp:
-        estimated_age = 22 + player.years_exp
-        if estimated_age <= 25:
-            age_score = 10.0
-        elif estimated_age <= 27:
-            age_score = 8.0
-        elif estimated_age <= 29:
-            age_score = 5.0
-        else:
-            age_score = 2.0
-    else:
-        age_score = 5.0
-
-    # 2. Positional value (max 10)
-    position_values = {
-        "QB": 10.0,
-        "RB": 9.0,
-        "WR": 8.0,
-        "TE": 7.0,
-        "K": 3.0,
-        "DEF": 4.0,
-    }
-    position_score = position_values.get(player.position, 5.0)
-
-    # 3. Production (max 10)
+    # --- Production component (max 10) ---
     if avg_points_per_game > 0:
         production_score = min(10.0, (avg_points_per_game / 20.0) * 10.0)
     else:
-        production_score = 2.0 if player.status == "Active" else 0.5
+        # Small baseline only for active, rostered players with no game data yet
+        production_score = 0.5 if player.status == "Active" else 0.0
 
-    power_score = age_score + position_score + production_score
+    if ktc_value > 0:
+        # Primary path: use KTC dynasty value as the main scoring driver.
+        # KTC is on a 0-10000 scale; normalise to 0-20 pts.
+        # This ensures market-perceived dynasty value (which already reflects age,
+        # position scarcity, and talent) drives the score rather than raw age.
+        ktc_component = min(20.0, (ktc_value / 10000.0) * 20.0)
+        power_score = ktc_component + production_score
+        # Expose breakdown via existing fields for UI compatibility
+        age_score = round(ktc_component, 1)    # repurposed as "dynasty value" component
+        position_score = 0.0
+    else:
+        # Fallback: no KTC data — use age + position (reduced weights vs. old formula)
+        if player.age:
+            effective_age = player.age
+        elif player.years_exp:
+            effective_age = 22 + player.years_exp
+        else:
+            effective_age = 27  # neutral assumption
+
+        if effective_age <= 25:
+            age_score = 8.0
+        elif effective_age <= 27:
+            age_score = 6.0
+        elif effective_age <= 29:
+            age_score = 4.0
+        else:
+            age_score = 1.5
+
+        position_values = {
+            "QB": 7.0,
+            "RB": 6.5,
+            "WR": 6.0,
+            "TE": 5.5,
+            "K": 2.0,
+            "DEF": 2.5,
+        }
+        position_score = position_values.get(player.position or "", 4.0)
+        power_score = age_score + position_score + production_score
 
     return PlayerPowerScore(
         player_id=player.id,
