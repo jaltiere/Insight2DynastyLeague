@@ -176,13 +176,14 @@ All endpoints under `/api` prefix:
    git checkout -b bugfix/bug-description
    ```
 3. **Work on your branch**, commit regularly with clear messages
-4. **Push your branch** to GitHub:
+4. **Always wait for local testing before creating a PR** - After pushing a branch, tell the user it's ready to test locally. Only create the PR after they confirm it looks good.
+5. **Push your branch** to GitHub:
    ```bash
    git push -u origin feature/feature-name
    ```
-5. **Create a Pull Request** on GitHub for code review
-6. **Merge only after review** - Use GitHub's merge button
-7. **Delete branch after merge** to keep repository clean
+6. **Create a Pull Request** on GitHub after user confirms local testing passes
+7. **Merge only after review** - Use GitHub's merge button
+8. **Delete branch after merge** to keep repository clean
 
 ### Commit Message Guidelines
 - Use present tense: "Add feature" not "Added feature"

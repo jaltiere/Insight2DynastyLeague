@@ -129,6 +129,9 @@ export const api = {
   // Draft Picks
   getFutureDraftPicks: () => apiClient.get('/draft-picks/future').then(res => res.data),
 
+  // Team Records
+  getTeamRecords: () => apiClient.get('/team-records').then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };
