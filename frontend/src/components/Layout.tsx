@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 
 interface NavLink {
@@ -68,10 +68,50 @@ const ThemeIcon = ({ theme }: { theme: string }) =>
     </svg>
   );
 
+const bottomTabs = [
+  {
+    to: '/',
+    label: 'Standings',
+    icon: (active: boolean) => (
+      <svg className={`w-6 h-6 ${active ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    ),
+  },
+  {
+    to: '/matchup-recaps',
+    label: 'Matchups',
+    icon: (active: boolean) => (
+      <svg className={`w-6 h-6 ${active ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/owners',
+    label: 'Teams',
+    icon: (active: boolean) => (
+      <svg className={`w-6 h-6 ${active ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/trade-calculator',
+    label: 'Trades',
+    icon: (active: boolean) => (
+      <svg className={`w-6 h-6 ${active ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+      </svg>
+    ),
+  },
+];
+
 export default function Layout() {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const location = useLocation();
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
@@ -135,8 +175,8 @@ export default function Layout() {
               </button>
             </div>
 
-            {/* Mobile: theme toggle + hamburger */}
-            <div className="flex items-center space-x-2 md:hidden">
+            {/* Mobile: theme toggle only (nav handled by bottom tab bar) */}
+            <div className="flex items-center md:hidden">
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
@@ -144,51 +184,96 @@ export default function Layout() {
               >
                 <ThemeIcon theme={theme} />
               </button>
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
-                aria-label="Toggle mobile menu"
-              >
-                {mobileMenuOpen ? (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                )}
-              </button>
             </div>
           </div>
 
-          {/* Mobile Navigation Menu – grouped with section headers */}
-          {mobileMenuOpen && (
-            <div className="md:hidden pb-4 space-y-3">
+          {/* Mobile Navigation Menu (desktop fallback only — mobile uses bottom sheet) */}
+        </div>
+      </nav>
+      <main className="pb-16 md:pb-0">
+        <Outlet />
+      </main>
+
+      {/* Mobile More Drawer (bottom sheet) */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-40 md:hidden" onClick={closeMobileMenu}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div
+            className="absolute bottom-14 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-2xl shadow-xl max-h-[70vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center px-4 pt-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+              <span className="text-base font-bold text-gray-900 dark:text-white">All Pages</span>
+              <button onClick={closeMobileMenu} className="p-1 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="pb-4">
               {navGroups.map((group) => (
                 <div key={group.label}>
-                  <div className="px-4 pt-2 pb-1 text-xs font-bold uppercase tracking-wider text-blue-200">
+                  <div className="px-4 pt-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                     {group.label}
                   </div>
-                  {group.links.map((link) => (
-                    <Link
-                      key={link.to}
-                      to={link.to}
-                      onClick={closeMobileMenu}
-                      className="block px-6 py-2 text-sm font-semibold hover:bg-blue-500 dark:hover:bg-blue-700 rounded transition"
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
+                  <div className="grid grid-cols-2 gap-1 px-2">
+                    {group.links.map((link) => {
+                      const isActive = link.to === '/' ? location.pathname === '/' : location.pathname.startsWith(link.to);
+                      return (
+                        <Link
+                          key={link.to}
+                          to={link.to}
+                          onClick={closeMobileMenu}
+                          className={`px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                            isActive
+                              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                              : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          {link.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Bottom Tab Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 md:hidden">
+        <div className="flex items-stretch">
+          {bottomTabs.map((tab) => {
+            const isActive = tab.to === '/' ? location.pathname === '/' : location.pathname.startsWith(tab.to);
+            return (
+              <Link
+                key={tab.to}
+                to={tab.to}
+                className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 min-h-[56px]"
+              >
+                {tab.icon(isActive)}
+                <span className={`text-[10px] font-medium ${isActive ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
+          {/* More tab */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 min-h-[56px]"
+          >
+            <svg className={`w-6 h-6 ${mobileMenuOpen ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span className={`text-[10px] font-medium ${mobileMenuOpen ? 'text-blue-500' : 'text-gray-500 dark:text-gray-400'}`}>
+              More
+            </span>
+          </button>
         </div>
       </nav>
-      <main>
-        <Outlet />
-      </main>
     </div>
   );
 }
