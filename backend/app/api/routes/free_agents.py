@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, desc
+from sqlalchemy import select, func, or_, desc, case
 from typing import Optional
 
 from app.database import get_db
@@ -68,7 +68,7 @@ async def get_free_agents(
     # Sort by KTC value descending (nulls last), then name
     query = (
         query
-        .order_by(func.isnull(PlayerValue.value), desc(PlayerValue.value), Player.full_name)
+        .order_by(case((PlayerValue.value == None, 1), else_=0), desc(PlayerValue.value), Player.full_name)
         .offset(offset)
         .limit(limit)
     )
