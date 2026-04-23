@@ -617,7 +617,6 @@ function PositionalScarcityView({ teams }: { teams: RosterTeam[] }) {
                   <React.Fragment key={team.roster_id}>
                     <tr
                       className="border-b hover:bg-gray-50 cursor-pointer"
-                      className="border-b hover:bg-gray-50 cursor-pointer"
                       onClick={() => setExpandedTeam(isExpanded ? null : team.roster_id)}
                     >
                       <td className="px-4 py-2">
