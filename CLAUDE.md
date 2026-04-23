@@ -185,9 +185,9 @@ All endpoints under `/api` prefix:
 7. **Merge only after review** - Use GitHub's merge button
 8. **After a PR is merged**: immediately run the following to sync local state and clean up merged branches:
    ```bash
-   git checkout main && git pull origin main && git fetch --prune && git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -d
+   git checkout main && git pull origin main && git fetch --prune && git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D
    ```
-   Note: `--merged` does not reliably detect branches merged via GitHub's merge button (different commit hash). Use `fetch --prune` + `gone` detection instead.
+   Note: Use `-D` (force) not `-d` — GitHub's merge commit has a different hash than the local branch tip, so `-d`'s "fully merged" check always fails.
 
 ### Commit Message Guidelines
 - Use present tense: "Add feature" not "Added feature"
