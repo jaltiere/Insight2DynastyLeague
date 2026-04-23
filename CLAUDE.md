@@ -183,7 +183,11 @@ All endpoints under `/api` prefix:
    ```
 6. **Create a Pull Request** on GitHub after user confirms local testing passes
 7. **Merge only after review** - Use GitHub's merge button
-8. **Delete branch after merge** to keep repository clean
+8. **After a PR is merged**: immediately run the following to sync local state and clean up merged branches:
+   ```bash
+   git checkout main && git pull origin main && git fetch --prune && git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -d
+   ```
+   Note: `--merged` does not reliably detect branches merged via GitHub's merge button (different commit hash). Use `fetch --prune` + `gone` detection instead.
 
 ### Commit Message Guidelines
 - Use present tense: "Add feature" not "Added feature"
