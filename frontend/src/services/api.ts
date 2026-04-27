@@ -136,6 +136,9 @@ export const api = {
   getFreeAgents: (params?: { search?: string; position?: string; limit?: number; offset?: number }) =>
     apiClient.get('/free-agents', { params }).then(res => res.data),
 
+  // Search
+  search: (q: string) => apiClient.get('/search', { params: { q } }).then(res => res.data),
+
   // Sync
   syncLeagueData: () => apiClient.post('/sync/league'),
 };

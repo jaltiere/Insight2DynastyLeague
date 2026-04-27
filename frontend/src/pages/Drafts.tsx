@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { usePlayerModal } from '../context/PlayerModalContext';
 
@@ -73,7 +74,9 @@ function avatarUrl(avatarId: string | null): string | null {
 
 export default function Drafts() {
   const { openPlayer } = usePlayerModal();
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
+  const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
+  const [selectedYear, setSelectedYear] = useState<number | null>(yearParam);
 
   const { data: draftList, isLoading: listLoading, error: listError } = useQuery<DraftListData>({
     queryKey: ['drafts'],

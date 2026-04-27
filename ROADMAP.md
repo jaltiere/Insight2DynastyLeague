@@ -20,6 +20,7 @@
 | Transactions | Trade/waiver history with metadata |
 | Playoffs | Bracket visualization |
 | Team Records | All-time franchise records: scoring, season totals, margins, streaks (reg + playoff), unluckiest seasons |
+| Mobile Bottom Tab Bar | Fixed bottom nav for primary pages (Standings, Matchups, Teams, Trades, More drawer) |
 
 ---
 
@@ -46,5 +47,5 @@
 
 ### UX / Polish
 - [ ] **Dark mode** — system-preference aware theme toggle
-- [ ] **Mobile nav improvements** — bottom tab bar for primary pages on mobile
+- [X] **Mobile nav improvements** — bottom tab bar for primary pages on mobile
 - [ ] **Search** — global search across players, owners, transactions
