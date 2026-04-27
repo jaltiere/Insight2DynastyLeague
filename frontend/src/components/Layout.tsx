@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
+import SearchModal from './SearchModal';
 
 interface NavLink {
   to: string;
@@ -111,9 +112,21 @@ export default function Layout() {
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(open => !open);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -167,16 +180,37 @@ export default function Layout() {
               ))}
 
               <button
+                onClick={() => setSearchOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-100 bg-blue-500 dark:bg-blue-700 hover:bg-blue-400 dark:hover:bg-blue-600 rounded-lg transition ml-1"
+                aria-label="Search"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <span className="hidden lg:inline">Search</span>
+                <kbd className="hidden lg:inline text-xs opacity-70 border border-blue-400 rounded px-1">⌘K</kbd>
+              </button>
+
+              <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition ml-2"
+                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition ml-1"
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
                 <ThemeIcon theme={theme} />
               </button>
             </div>
 
-            {/* Mobile: theme toggle only (nav handled by bottom tab bar) */}
-            <div className="flex items-center md:hidden">
+            {/* Mobile: search + theme toggle (nav handled by bottom tab bar) */}
+            <div className="flex items-center gap-1 md:hidden">
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
+                aria-label="Search"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-blue-500 dark:hover:bg-blue-700 transition"
@@ -241,6 +275,8 @@ export default function Layout() {
           </div>
         </div>
       )}
+
+      <SearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Mobile Bottom Tab Bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 md:hidden">
