@@ -4,8 +4,9 @@
 [build]
 builder = "nixpacks"
 
-[deploy]
-startCommand = "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# Backend start command is defined in nixpacks.toml so it only applies to
+# the backend service. Defining startCommand here caused the frontend Railway
+# service (which has no Python) to crash on deploy.
 
 # Environment variables (set in Railway dashboard)
 # Required:
