@@ -128,6 +128,39 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
     if not draft:
         raise HTTPException(status_code=404, detail=f"Draft for year {year} not found")
 
+    # Live sync from Sleeper when draft is active so polling returns fresh picks
+    if draft.status in ("in_progress", "paused", "pre_draft"):
+        try:
+            draft_detail = await sleeper_client.get_draft(draft.id)
+            draft.status = draft_detail.get("status", draft.status)
+
+            picks_data = await sleeper_client.get_draft_picks(draft.id)
+            for pick_data in picks_data:
+                pick_no = pick_data.get("pick_no")
+                pick_result = await db.execute(
+                    select(DraftPick).where(
+                        DraftPick.draft_id == draft.id,
+                        DraftPick.pick_no == pick_no
+                    )
+                )
+                existing = pick_result.scalar_one_or_none()
+                if existing:
+                    existing.player_id = pick_data.get("player_id")
+                    existing.pick_metadata = pick_data.get("metadata", {})
+                else:
+                    db.add(DraftPick(
+                        draft_id=draft.id,
+                        pick_no=pick_no,
+                        round=pick_data.get("round"),
+                        pick_in_round=pick_data.get("draft_slot"),
+                        roster_id=pick_data.get("roster_id"),
+                        player_id=pick_data.get("player_id"),
+                        pick_metadata=pick_data.get("metadata", {})
+                    ))
+            await db.flush()
+        except Exception:
+            pass  # Serve stale data if Sleeper is unreachable
+
     # Get all picks for this draft
     result = await db.execute(
         select(DraftPick)
