@@ -141,6 +141,7 @@ export default function DraftCountdownBanner() {
   // Don't show if no draft or draft is complete
   if (!draft || draft.status === 'complete') return null;
 
+  const isDraftLive = draft.status === 'in_progress' || draft.status === 'paused';
   const targetDate = draft.start_time ? new Date(draft.start_time) : null;
   const hasDraftOrder = draft.draft_order && draft.draft_order.length > 0;
 
@@ -155,7 +156,9 @@ export default function DraftCountdownBanner() {
             {draft.year} Draft
           </span>
         </div>
-        {targetDate ? (
+        {isDraftLive ? (
+          <span className="text-lg font-semibold text-blue-600 dark:text-blue-400">Draft is underway!</span>
+        ) : targetDate ? (
           <CountdownTimer targetDate={targetDate} />
         ) : (
           <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">Coming Soon</span>
