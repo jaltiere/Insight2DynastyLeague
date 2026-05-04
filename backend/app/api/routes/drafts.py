@@ -129,7 +129,7 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Draft for year {year} not found")
 
     # Live sync from Sleeper when draft is active so polling returns fresh picks
-    if draft.status in ("in_progress", "paused", "pre_draft"):
+    if draft.status in ("in_progress", "drafting", "paused", "pre_draft"):
         try:
             draft_detail = await sleeper_client.get_draft(draft.id)
             draft.status = draft_detail.get("status", draft.status)
