@@ -92,12 +92,12 @@ export default function Drafts() {
     enabled: !!activeYear,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === 'in_progress' || status === 'paused' ? 15_000 : false;
+      return status === 'in_progress' || status === 'drafting' || status === 'paused' ? 15_000 : false;
     },
     refetchIntervalInBackground: false,
   });
 
-  const isDraftLive = draftDetail?.status === 'in_progress' || draftDetail?.status === 'paused';
+  const isDraftLive = ['in_progress', 'drafting', 'paused'].includes(draftDetail?.status ?? '');
 
   // Organize picks into a grid: [round][slot] -> pick
   const { slots, grid, slotOwnerMap } = useMemo(() => {

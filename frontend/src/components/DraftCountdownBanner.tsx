@@ -141,7 +141,7 @@ export default function DraftCountdownBanner() {
   // Don't show if no draft or draft is complete
   if (!draft || draft.status === 'complete') return null;
 
-  const isDraftLive = draft.status === 'in_progress' || draft.status === 'paused';
+  const isDraftLive = ['in_progress', 'drafting', 'paused'].includes(draft.status);
   const targetDate = draft.start_time ? new Date(draft.start_time) : null;
   const hasDraftOrder = draft.draft_order && draft.draft_order.length > 0;
 
