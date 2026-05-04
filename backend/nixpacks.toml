@@ -4,8 +4,5 @@
 [phases.setup]
 nixPkgs = ["python311", "gcc", "libmysqlclient"]
 
-[phases.install]
-cmds = ["python3 -m pip install -r requirements.txt"]
-
 [start]
-cmd = "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+cmd = ". /opt/venv/bin/activate && python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
