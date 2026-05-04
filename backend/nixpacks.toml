@@ -1,8 +1,5 @@
-# Nixpacks configuration for Railway
-# Set working directory to backend
-
-[variables]
-NIXPACKS_WORKING_DIR = "backend"
+# Nixpacks configuration for Railway backend service
+# root_dir=backend, so this file must live in backend/
 
 [phases.setup]
 nixPkgs = ["python311", "gcc", "libmysqlclient"]
