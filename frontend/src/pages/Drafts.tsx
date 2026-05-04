@@ -90,7 +90,14 @@ export default function Drafts() {
     queryKey: ['draftDetail', activeYear],
     queryFn: () => api.getDraftByYear(activeYear!),
     enabled: !!activeYear,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'in_progress' || status === 'paused' ? 15_000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
+
+  const isDraftLive = draftDetail?.status === 'in_progress' || draftDetail?.status === 'paused';
 
   // Organize picks into a grid: [round][slot] -> pick
   const { slots, grid, slotOwnerMap } = useMemo(() => {
@@ -188,7 +195,15 @@ export default function Drafts() {
       {draftDetail && !detailLoading && (
         <div className="bg-white rounded-lg shadow">
           <div className="bg-blue-600 dark:bg-blue-800 text-white px-6 py-3 rounded-t-lg flex items-center justify-between">
-            <h2 className="text-xl font-semibold">{draftDetail.year} Draft</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold">{draftDetail.year} Draft</h2>
+              {isDraftLive && (
+                <span className="flex items-center gap-1.5 bg-white/20 rounded-full px-2.5 py-0.5 text-xs font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  LIVE
+                </span>
+              )}
+            </div>
             <span className="text-sm opacity-80 capitalize">{draftDetail.type} - {draftDetail.rounds} rounds</span>
           </div>
 
