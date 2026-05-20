@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league, create_season, create_user, create_roster,
     create_player, create_transaction,
@@ -5,7 +6,7 @@ from tests.conftest import (
 
 
 async def test_get_recent_transactions_empty(client):
-    response = await client.get("/api/transactions/recent")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/recent")
     assert response.status_code == 200
     assert response.json()["transactions"] == []
 
@@ -31,7 +32,7 @@ async def test_get_recent_transactions_with_data(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/transactions/recent")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/recent")
     assert response.status_code == 200
     data = response.json()
     assert len(data["transactions"]) == 1
@@ -58,7 +59,7 @@ async def test_get_recent_transactions_limit(client, db_session):
         )
     await db_session.flush()
 
-    response = await client.get("/api/transactions/recent?limit=3")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/recent?limit=3")
     assert response.status_code == 200
     assert len(response.json()["transactions"]) == 3
 
@@ -81,7 +82,7 @@ async def test_get_recent_transactions_resolves_drops(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/transactions/recent")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/recent")
     assert response.status_code == 200
     txn = response.json()["transactions"][0]
     assert len(txn["drops"]) == 1
@@ -95,7 +96,7 @@ async def test_get_recent_transactions_response_fields(client, db_session):
     await create_transaction(db_session, season, id="txn_fields")
     await db_session.flush()
 
-    response = await client.get("/api/transactions/recent")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/recent")
     assert response.status_code == 200
     txn = response.json()["transactions"][0]
     for key in ["id", "type", "status", "season", "week", "waiver_bid",
@@ -109,7 +110,7 @@ async def test_get_recent_transactions_response_fields(client, db_session):
 
 
 async def test_transaction_summary_empty(client):
-    response = await client.get("/api/transactions/summary")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/summary")
     assert response.status_code == 200
     assert response.json()["summary"] == []
 
@@ -143,7 +144,7 @@ async def test_transaction_summary_counts(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/transactions/summary")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/summary")
     assert response.status_code == 200
     data = response.json()
     assert len(data["summary"]) == 1
@@ -175,7 +176,7 @@ async def test_transaction_summary_filter_by_season(client, db_session):
     await db_session.flush()
 
     # Filter to 2024 only
-    response = await client.get("/api/transactions/summary?season=2024")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/summary?season=2024")
     assert response.status_code == 200
     data = response.json()
     assert len(data["summary"]) == 1
@@ -194,7 +195,7 @@ async def test_transaction_summary_response_fields(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/transactions/summary")
+    response = await client.get(f"{LEAGUE_PREFIX}/transactions/summary")
     assert response.status_code == 200
     entry = response.json()["summary"][0]
     for key in ["user_id", "username", "team_name",
@@ -209,7 +210,7 @@ async def test_transaction_summary_response_fields(client, db_session):
 
 async def test_transactions_by_owner_empty(client):
     response = await client.get(
-        "/api/transactions/by-owner?user_id=nobody&type=waiver"
+        f"{LEAGUE_PREFIX}/transactions/by-owner?user_id=nobody&type=waiver"
     )
     assert response.status_code == 200
     assert response.json()["transactions"] == []
@@ -235,7 +236,7 @@ async def test_transactions_by_owner_filters_type(client, db_session):
     await db_session.flush()
 
     response = await client.get(
-        f"/api/transactions/by-owner?user_id={user.id}&type=waiver"
+        f"{LEAGUE_PREFIX}/transactions/by-owner?user_id={user.id}&type=waiver"
     )
     assert response.status_code == 200
     data = response.json()
@@ -262,7 +263,7 @@ async def test_transactions_by_owner_filters_season(client, db_session):
     await db_session.flush()
 
     response = await client.get(
-        f"/api/transactions/by-owner?user_id={user.id}&type=waiver&season=2024"
+        f"{LEAGUE_PREFIX}/transactions/by-owner?user_id={user.id}&type=waiver&season=2024"
     )
     assert response.status_code == 200
     data = response.json()
@@ -289,7 +290,7 @@ async def test_transactions_by_owner_excludes_other_owners(client, db_session):
     await db_session.flush()
 
     response = await client.get(
-        "/api/transactions/by-owner?user_id=user1&type=waiver"
+        f"{LEAGUE_PREFIX}/transactions/by-owner?user_id=user1&type=waiver"
     )
     assert response.status_code == 200
     data = response.json()

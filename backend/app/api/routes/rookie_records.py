@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import MatchupPlayerPoint, Matchup, Roster, Player, User, Season
 from typing import Optional
 
@@ -10,6 +11,7 @@ router = APIRouter()
 
 @router.get("/rookie-records")
 async def get_rookie_records(
+    league_id: str = Depends(get_league_id),
     view: str = Query("game", pattern="^(game|season)$"),
     match_type: str = Query("regular", pattern="^(regular|playoff|consolation)$"),
     roster_type: str = Query("all", pattern="^(all|starter|bench)$"),
@@ -20,14 +22,14 @@ async def get_rookie_records(
     """Get top rookie player scoring records by game or season (first-year players only)."""
 
     if view == "game":
-        records = await _get_game_records(db, match_type, roster_type, position, limit)
+        records = await _get_game_records(db, match_type, roster_type, position, limit, league_id)
     else:
-        records = await _get_season_records(db, match_type, roster_type, position, limit)
+        records = await _get_season_records(db, match_type, roster_type, position, limit, league_id)
 
     return {"view": view, "match_type": match_type, "roster_type": roster_type, "records": records}
 
 
-async def _get_game_records(db, match_type, roster_type, position, limit):
+async def _get_game_records(db, match_type, roster_type, position, limit, league_id):
     """Top individual game performances by rookies."""
     query = (
         select(
@@ -49,8 +51,7 @@ async def _get_game_records(db, match_type, roster_type, position, limit):
         .join(Player, MatchupPlayerPoint.player_id == Player.id)
         .join(User, Roster.user_id == User.id)
         .join(Season, Matchup.season_id == Season.id)
-        .where(Matchup.match_type == match_type)
-        .where(Season.year == Player.rookie_year)
+        .where(Matchup.match_type == match_type, Season.year == Player.rookie_year, Season.group_id == league_id)
     )
 
     query = _apply_filters(query, roster_type, position)
@@ -77,7 +78,7 @@ async def _get_game_records(db, match_type, roster_type, position, limit):
     ]
 
 
-async def _get_season_records(db, match_type, roster_type, position, limit):
+async def _get_season_records(db, match_type, roster_type, position, limit, league_id):
     """Top rookie player season totals."""
     query = (
         select(
@@ -98,8 +99,7 @@ async def _get_season_records(db, match_type, roster_type, position, limit):
         .join(Player, MatchupPlayerPoint.player_id == Player.id)
         .join(User, Roster.user_id == User.id)
         .join(Season, Matchup.season_id == Season.id)
-        .where(Matchup.match_type == match_type)
-        .where(Season.year == Player.rookie_year)
+        .where(Matchup.match_type == match_type, Season.year == Player.rookie_year, Season.group_id == league_id)
     )
 
     query = _apply_filters(query, roster_type, position)

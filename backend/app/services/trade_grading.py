@@ -101,8 +101,9 @@ def _max_grade_for_value(side_value: float) -> Optional[str]:
 
 
 class TradeGradingService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, league_id: str | None = None):
         self.db = db
+        self.league_id = league_id
 
     # ------------------------------------------------------------------
     # Public API
@@ -224,6 +225,8 @@ class TradeGradingService:
             )
             .order_by(Transaction.status_updated.desc())
         )
+        if self.league_id is not None:
+            query = query.where(Season.group_id == self.league_id)
         if season is not None:
             query = query.where(Season.year == season)
         result = await self.db.execute(query)

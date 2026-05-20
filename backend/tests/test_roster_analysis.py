@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from tests.conftest import create_league, create_user, create_season, create_roster, create_player
 
@@ -13,7 +14,7 @@ async def test_roster_analysis_returns_teams(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, players=["p1", "p2"])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     assert resp.status_code == 200
     data = resp.json()
 
@@ -27,7 +28,7 @@ async def test_roster_analysis_returns_teams(client, db_session):
 @pytest.mark.asyncio
 async def test_roster_analysis_empty_when_no_season(client, db_session):
     """Returns empty teams list when no seasons exist."""
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     assert resp.status_code == 200
     data = resp.json()
 
@@ -47,7 +48,7 @@ async def test_roster_analysis_uses_latest_season(client, db_session):
     await create_roster(db_session, season_new, user, roster_id=2, players=[])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     data = resp.json()
 
     assert data["season"] == 2025
@@ -63,7 +64,7 @@ async def test_roster_analysis_classification_assigned(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, players=[])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     data = resp.json()
 
     team = data["teams"][0]
@@ -82,7 +83,7 @@ async def test_roster_analysis_positional_counts(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, players=["p1", "p2", "p3"])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     data = resp.json()
 
     team = data["teams"][0]
@@ -98,12 +99,12 @@ async def test_roster_analysis_sorted_by_score_descending(client, db_session):
     user1 = await create_user(db_session, id="u1", username="owner1", display_name="Alpha")
     user2 = await create_user(db_session, id="u2", username="owner2", display_name="Beta")
     await create_player(db_session, id="p1", full_name="Star QB", position="QB", team="KC", age=27)
-    # user1 has a player, user2 has no players → user1 should rank higher
+    # user1 has a player, user2 has no players â†’ user1 should rank higher
     await create_roster(db_session, season, user1, roster_id=1, players=["p1"])
     await create_roster(db_session, season, user2, roster_id=2, players=[])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     data = resp.json()
 
     assert data["teams"][0]["owner_name"] == "Alpha"
@@ -120,7 +121,7 @@ async def test_roster_analysis_response_has_all_fields(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, team_name="Dynasty Kings", players=["p1"])
     await db_session.commit()
 
-    resp = await client.get("/api/roster-analysis")
+    resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
     assert resp.status_code == 200
     data = resp.json()
 

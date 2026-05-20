@@ -1,0 +1,23 @@
+[
+  {
+    "id": "1313933992642220032",
+    "slug": "insight2dynasty",
+    "name": "Insight2Dynasty",
+    "default": true,
+    "recaps_enabled": true
+  },
+  {
+    "id": "1313956225737580544",
+    "slug": "couch-crusaders",
+    "name": "Couch Crusaders",
+    "default": false,
+    "recaps_enabled": false
+  },
+  {
+    "id": "1313956150672125952",
+    "slug": "double-domination",
+    "name": "Double Domination",
+    "default": false,
+    "recaps_enabled": false
+  }
+]

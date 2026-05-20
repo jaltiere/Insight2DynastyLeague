@@ -20,11 +20,17 @@ class PlayerValue(Base):
     # Human-readable name from KTC (e.g. "Josh Allen" or "2026 Early 1st")
     ktc_name = Column(String(200), nullable=False)
 
-    # KTC value on 0-10000 scale
+    # KTC value on 0-10000 scale (1QB format)
     value = Column(Integer, nullable=False, default=0)
 
-    # KTC overall rank
+    # KTC value in superflex format (QB scores twice as much)
+    superflex_value = Column(Integer, nullable=True)
+
+    # KTC overall rank (1QB)
     rank = Column(Integer, nullable=True)
+
+    # KTC rank in superflex format
+    superflex_rank = Column(Integer, nullable=True)
 
     # "ktc" or "internal" (fallback)
     source = Column(String(20), nullable=False, default="ktc")

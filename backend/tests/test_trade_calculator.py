@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 """Tests for the trade calculator endpoints.
 
 Covers:
@@ -58,7 +59,7 @@ async def _seed_base(db: AsyncSession):
 
 async def test_get_owners_returns_list(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/owners")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/owners")
     assert resp.status_code == 200
     data = resp.json()
     assert "owners" in data
@@ -68,7 +69,7 @@ async def test_get_owners_returns_list(client: AsyncClient, db_session: AsyncSes
 
 async def test_get_owners_response_has_required_fields(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/owners")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/owners")
     assert resp.status_code == 200
     owner = resp.json()["owners"][0]
     for field in ("user_id", "display_name", "team_name", "roster_id", "classification", "avg_age"):
@@ -78,14 +79,14 @@ async def test_get_owners_response_has_required_fields(client: AsyncClient, db_s
 async def test_get_owners_classification_is_string_or_none(client: AsyncClient, db_session: AsyncSession):
     """Regression: AttributeError 'PlayerPowerScore' object has no attribute 'score' (should be power_score)."""
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/owners")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/owners")
     assert resp.status_code == 200
     for owner in resp.json()["owners"]:
         assert owner["classification"] is None or isinstance(owner["classification"], str)
 
 
 async def test_get_owners_empty_when_no_season(client: AsyncClient):
-    resp = await client.get("/api/trade-calculator/owners")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/owners")
     assert resp.status_code == 200
     assert resp.json()["owners"] == []
 
@@ -96,7 +97,7 @@ async def test_get_owners_empty_when_no_season(client: AsyncClient):
 
 async def test_get_roster_response_shape(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/roster/user_a")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster/user_a")
     assert resp.status_code == 200
     data = resp.json()
     assert "user_id" in data
@@ -119,7 +120,7 @@ async def test_get_roster_player_has_ktc_fields(client: AsyncClient, db_session:
     db_session.add(pv)
     await db_session.commit()
 
-    resp = await client.get("/api/trade-calculator/roster/user_a")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster/user_a")
     assert resp.status_code == 200
     players = resp.json()["players"]
     assert len(players) == 1
@@ -131,7 +132,7 @@ async def test_get_roster_player_has_ktc_fields(client: AsyncClient, db_session:
 
 async def test_get_roster_404_unknown_user(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/roster/no_such_user")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster/no_such_user")
     assert resp.status_code == 404
 
 
@@ -140,7 +141,7 @@ async def test_get_roster_404_unknown_user(client: AsyncClient, db_session: Asyn
 # ---------------------------------------------------------------------------
 
 async def test_get_pick_values_empty(client: AsyncClient):
-    resp = await client.get("/api/trade-calculator/pick-values")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/pick-values")
     assert resp.status_code == 200
     data = resp.json()
     assert "picks" in data
@@ -158,7 +159,7 @@ async def test_get_pick_values_returns_rdp_rows(client: AsyncClient, db_session:
     db_session.add(pv)
     await db_session.commit()
 
-    resp = await client.get("/api/trade-calculator/pick-values")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/pick-values")
     assert resp.status_code == 200
     picks = resp.json()["picks"]
     assert len(picks) == 1
@@ -174,7 +175,7 @@ async def test_get_pick_values_returns_rdp_rows(client: AsyncClient, db_session:
 
 async def test_h2h_trades_no_history(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/h2h-trades/user_a/user_b")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/h2h-trades/user_a/user_b")
     assert resp.status_code == 200
     data = resp.json()
     assert "summary" in data
@@ -184,7 +185,7 @@ async def test_h2h_trades_no_history(client: AsyncClient, db_session: AsyncSessi
 
 async def test_h2h_trades_unknown_user_returns_empty(client: AsyncClient, db_session: AsyncSession):
     await _seed_base(db_session)
-    resp = await client.get("/api/trade-calculator/h2h-trades/user_a/ghost_user")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/h2h-trades/user_a/ghost_user")
     # Unknown user gracefully returns empty history (no 500)
     assert resp.status_code in (200, 404)
     if resp.status_code == 200:

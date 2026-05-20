@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Draft, DraftPick, Player, Roster, Season, User
 from app.services.sleeper_client import sleeper_client
 from collections import Counter
@@ -11,10 +12,16 @@ router = APIRouter()
 
 
 @router.get("/drafts")
-async def get_all_drafts(db: AsyncSession = Depends(get_db)):
+async def get_all_drafts(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get all draft years available."""
     result = await db.execute(
-        select(Draft).order_by(desc(Draft.year))
+        select(Draft)
+        .join(Season, Draft.season_id == Season.id)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Draft.year))
     )
     drafts = result.scalars().all()
 
@@ -36,10 +43,17 @@ async def get_all_drafts(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/drafts/current")
-async def get_current_draft(db: AsyncSession = Depends(get_db)):
+async def get_current_draft(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get the most recent season's draft status for countdown display."""
     result = await db.execute(
-        select(Draft).order_by(desc(Draft.year)).limit(1)
+        select(Draft)
+        .join(Season, Draft.season_id == Season.id)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Draft.year))
+        .limit(1)
     )
     draft = result.scalar_one_or_none()
 
@@ -75,7 +89,7 @@ async def get_current_draft(db: AsyncSession = Depends(get_db)):
                 select(Roster, User)
                 .join(User, Roster.user_id == User.id)
                 .join(Season, Roster.season_id == Season.id)
-                .where(Roster.roster_id.in_(list(all_roster_ids)), Season.year == draft.year)
+                .where(Roster.roster_id.in_(list(all_roster_ids)), Season.year == draft.year, Season.group_id == league_id)
             )
             for roster, user in result.all():
                 roster_to_owner[roster.roster_id] = {
@@ -117,11 +131,16 @@ async def get_current_draft(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/drafts/{year}")
-async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
+async def get_draft_by_year(
+    year: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get draft results for a specific year."""
-    # Get draft for this year
     result = await db.execute(
-        select(Draft).where(Draft.year == year)
+        select(Draft)
+        .join(Season, Draft.season_id == Season.id)
+        .where(Draft.year == year, Season.group_id == league_id)
     )
     draft = result.scalar_one_or_none()
 
@@ -222,7 +241,7 @@ async def get_draft_by_year(year: int, db: AsyncSession = Depends(get_db)):
             select(Roster, User)
             .join(User, Roster.user_id == User.id)
             .join(Season, Roster.season_id == Season.id)
-            .where(Roster.roster_id.in_(roster_ids), Season.year == draft.year)
+            .where(Roster.roster_id.in_(roster_ids), Season.year == draft.year, Season.group_id == league_id)
         )
         for roster, user in result.all():
             roster_to_user[roster.roster_id] = {

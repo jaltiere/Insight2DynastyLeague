@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league, create_season, create_user, create_roster, create_matchup,
     create_season_award,
@@ -18,7 +19,7 @@ async def test_get_all_owners_success(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=2, matchup_id=1,
                          home_points=110, away_points=105, winner_roster_id=r1.id)
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     data = response.json()
     assert data["total_owners"] == 2
@@ -28,7 +29,7 @@ async def test_get_all_owners_success(client, db_session):
 
 
 async def test_get_all_owners_empty(client):
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     data = response.json()
     assert data["total_owners"] == 0
@@ -53,7 +54,7 @@ async def test_get_owner_details_success(client, db_session):
     await create_matchup(db_session, s2024, r1_2024, r2_2024, week=1, matchup_id=1,
                          home_points=120, away_points=105, winner_roster_id=r1_2024.id)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     data = response.json()
     assert data["user_id"] == "u1"
@@ -63,7 +64,7 @@ async def test_get_owner_details_success(client, db_session):
 
 
 async def test_get_owner_details_not_found(client):
-    response = await client.get("/api/owners/nonexistent")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/nonexistent")
     assert response.status_code == 404
     assert "Owner not found" in response.json()["detail"]
 
@@ -82,19 +83,23 @@ async def test_owner_career_win_percentage(client, db_session):
     await create_matchup(db_session, season, r2, r1, week=2, matchup_id=1,
                          home_points=130, away_points=100, winner_roster_id=r2.id)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     assert response.json()["career_stats"]["career_win_percentage"] == 0.5
 
 
 async def test_owner_with_no_rosters(client, db_session):
-    await create_user(db_session, id="u1")
+    # A user who is in the league (has a roster) but has no matchups should have 0 wins.
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    user = await create_user(db_session, id="u1")
+    await create_roster(db_session, season, user, roster_id=1)
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     owner = response.json()["owners"][0]
     assert owner["total_wins"] == 0
-    assert owner["seasons_played"] == 0
+    assert owner["seasons_played"] == 1
 
 
 async def test_owner_details_seasons_ordered_desc(client, db_session):
@@ -107,7 +112,7 @@ async def test_owner_details_seasons_ordered_desc(client, db_session):
     await create_roster(db_session, s2023, user, roster_id=2)
     await create_roster(db_session, s2024, user, roster_id=3)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     seasons = response.json()["seasons"]
     assert seasons[0]["year"] == 2024
@@ -137,7 +142,7 @@ async def test_owners_categorized_stats(client, db_session):
                          home_points=95, away_points=105, winner_roster_id=r1.id,
                          match_type="consolation")
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     stats = response.json()["career_stats"]
 
@@ -156,7 +161,7 @@ async def test_owners_list_includes_categories(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1)
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     owner = response.json()["owners"][0]
     assert "regular_season" in owner
@@ -173,7 +178,7 @@ async def test_owners_backward_compat(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1)
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     owner = response.json()["owners"][0]
     assert "total_wins" in owner
     assert "total_losses" in owner
@@ -197,7 +202,7 @@ async def test_owner_details_season_categories(client, db_session):
                          home_points=130, away_points=110, winner_roster_id=r1.id,
                          match_type="playoff")
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     season_data = response.json()["seasons"][0]
     assert season_data["regular_season"]["wins"] == 1
@@ -217,7 +222,7 @@ async def test_owner_details_division_name(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1, division=2)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     season_data = response.json()["seasons"][0]
     assert season_data["division"] == 2
@@ -231,7 +236,7 @@ async def test_owner_details_division_name_fallback(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1, division=1)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     season_data = response.json()["seasons"][0]
     assert season_data["division_name"] == "Division 1"
@@ -264,7 +269,7 @@ async def test_owner_details_median_record(client, db_session):
     await create_matchup(db_session, season, r3, r4, week=2, matchup_id=2,
                          home_points=100, away_points=60, winner_roster_id=r3.id)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     season_data = response.json()["seasons"][0]
     assert season_data["median_wins"] == 1
@@ -279,7 +284,7 @@ async def test_owner_details_median_record_no_matchups(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1)
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     season_data = response.json()["seasons"][0]
     assert season_data["median_wins"] == 0
@@ -302,7 +307,7 @@ async def test_owners_list_includes_trophies(client, db_session):
     await create_season_award(db_session, s2, user, award_type="champion")
     await create_season_award(db_session, s2, user, award_type="most_points")
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     owner = response.json()["owners"][0]
     assert owner["trophies"]["champion"] == 2
@@ -321,7 +326,7 @@ async def test_owner_details_includes_trophies(client, db_session):
     await create_season_award(db_session, season, user, award_type="division_winner",
                               award_detail="Division 1")
 
-    response = await client.get("/api/owners/u1")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners/u1")
     assert response.status_code == 200
     data = response.json()
     assert data["trophies"]["champion"] == 1
@@ -337,7 +342,7 @@ async def test_owner_trophies_zero_when_no_awards(client, db_session):
     user = await create_user(db_session, id="u1")
     await create_roster(db_session, season, user, roster_id=1)
 
-    response = await client.get("/api/owners")
+    response = await client.get(f"{LEAGUE_PREFIX}/owners")
     assert response.status_code == 200
     owner = response.json()["owners"][0]
     assert owner["trophies"] == {"champion": 0, "division_winner": 0, "most_points": 0, "consolation": 0, "bench_points": 0}

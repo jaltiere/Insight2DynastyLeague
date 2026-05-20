@@ -1,8 +1,25 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import Union
+from typing import Union, Any
 from pydantic import field_validator
+import json
+
+_LEAGUES_FILE = Path(__file__).resolve().parent.parent / "leagues.json"
+
+
+def _load_leagues() -> list[dict[str, Any]]:
+    """Load league configs from leagues.json."""
+    if _LEAGUES_FILE.exists():
+        with open(_LEAGUES_FILE) as f:
+            return json.load(f)
+    return []
+
+
+LEAGUES: list[dict[str, Any]] = _load_leagues()
+LEAGUES_BY_SLUG: dict[str, dict[str, Any]] = {lg["slug"]: lg for lg in LEAGUES}
+LEAGUES_BY_ID: dict[str, dict[str, Any]] = {lg["id"]: lg for lg in LEAGUES}
+DEFAULT_LEAGUE: dict[str, Any] | None = next((lg for lg in LEAGUES if lg.get("default")), LEAGUES[0] if LEAGUES else None)
 
 
 class Settings(BaseSettings):
@@ -16,8 +33,8 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "mysql+aiomysql://insight2dynasty_user:insight2dynasty_pass@localhost:3307/insight2dynasty"
 
-    # Sleeper API
-    SLEEPER_LEAGUE_ID: str = "1313933992642220032"
+    # Sleeper API (kept for sync_service compatibility; defaults to default league)
+    SLEEPER_LEAGUE_ID: str = DEFAULT_LEAGUE["id"] if DEFAULT_LEAGUE else "1313933992642220032"
     SLEEPER_BASE_URL: str = "https://api.sleeper.app/v1"
 
     # Anthropic API (for AI-generated recaps)

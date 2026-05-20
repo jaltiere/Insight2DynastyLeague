@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import create_league, create_season, create_user, create_roster, create_matchup
 
 
@@ -9,7 +10,7 @@ async def test_get_current_standings_success(client, db_session):
     await create_roster(db_session, season, user1, roster_id=1, wins=10, losses=4, points_for=1500)
     await create_roster(db_session, season, user2, roster_id=2, wins=8, losses=6, points_for=1300)
 
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 200
     data = response.json()
     assert data["season"] == 2024
@@ -20,7 +21,7 @@ async def test_get_current_standings_success(client, db_session):
 
 
 async def test_get_current_standings_no_seasons(client):
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 404
     assert "No season data found" in response.json()["detail"]
 
@@ -33,7 +34,7 @@ async def test_get_historical_standings_success(client, db_session):
     await create_roster(db_session, season_2023, user, roster_id=1, wins=6, losses=8, points_for=1100)
     await create_roster(db_session, season_2024, user, roster_id=2, wins=11, losses=3, points_for=1600)
 
-    response = await client.get("/api/standings/2023")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings/2023")
     assert response.status_code == 200
     data = response.json()
     assert data["season"] == 2023
@@ -44,7 +45,7 @@ async def test_get_historical_standings_not_found(client, db_session):
     league = await create_league(db_session)
     await create_season(db_session, league, year=2024)
 
-    response = await client.get("/api/standings/2020")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings/2020")
     assert response.status_code == 404
     assert "Season 2020 not found" in response.json()["detail"]
 
@@ -55,7 +56,7 @@ async def test_standings_win_percentage_with_ties(client, db_session):
     user = await create_user(db_session)
     await create_roster(db_session, season, user, roster_id=1, wins=7, losses=6, ties=1)
 
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 200
     standing = response.json()["standings"][0]
     # 7 / (7 + 6 + 1) = 0.5
@@ -68,7 +69,7 @@ async def test_standings_response_has_all_fields(client, db_session):
     user = await create_user(db_session)
     await create_roster(db_session, season, user)
 
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 200
     data = response.json()
     assert "season" in data
@@ -109,7 +110,7 @@ async def test_standings_median_record(client, db_session):
     await create_matchup(db_session, season, r2, r4, week=2, matchup_id=2,
                          home_points=110, away_points=70, match_type="regular")
 
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 200
     standings = {s["user_id"]: s for s in response.json()["standings"]}
 
@@ -138,7 +139,7 @@ async def test_standings_median_excludes_playoffs(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=15, matchup_id=1,
                          home_points=80, away_points=150, match_type="playoff")
 
-    response = await client.get("/api/standings")
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
     standings = {s["user_id"]: s for s in response.json()["standings"]}
 
     # Only 1 regular season week counted

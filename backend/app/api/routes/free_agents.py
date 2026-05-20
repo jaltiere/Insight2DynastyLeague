@@ -4,6 +4,7 @@ from sqlalchemy import select, func, or_, desc, case
 from typing import Optional
 
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Player, PlayerValue, Roster, Season
 
 router = APIRouter()
@@ -13,6 +14,7 @@ STARTABLE_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
 
 @router.get("/free-agents")
 async def get_free_agents(
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None, description="Search by player name"),
     position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE, K)"),
@@ -21,8 +23,12 @@ async def get_free_agents(
 ):
     """Return players not on any roster in the current season, sorted by KTC value."""
 
-    # Get the latest season
-    season_result = await db.execute(select(Season).order_by(desc(Season.year)).limit(1))
+    season_result = await db.execute(
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
+    )
     season = season_result.scalar_one_or_none()
 
     rostered_ids: set[str] = set()

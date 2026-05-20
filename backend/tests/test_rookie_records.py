@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from tests.conftest import (
     create_league, create_user, create_season, create_roster,
@@ -25,7 +26,7 @@ async def seed_data(db_session):
         db_session, id="rqb1", full_name="Rookie QB", first_name="Rookie", last_name="QB",
         position="QB", rookie_year=2024, years_exp=0,
     )
-    # Rookie in 2023 (rookie_year=2023) — not a rookie in 2024
+    # Rookie in 2023 (rookie_year=2023) â€” not a rookie in 2024
     veteran_rb = await create_player(
         db_session, id="vrb1", full_name="Veteran RB", first_name="Veteran", last_name="RB",
         position="RB", rookie_year=2023, years_exp=1,
@@ -36,12 +37,12 @@ async def seed_data(db_session):
         position="WR", rookie_year=2024, years_exp=0,
     )
 
-    # 2023 matchups — veteran_rb is a rookie here
+    # 2023 matchups â€” veteran_rb is a rookie here
     m1 = await create_matchup(db_session, s2023, r1_2023, r2_2023, week=1, matchup_id=1,
                                match_type="regular", home_points=100.0, away_points=90.0)
     await create_matchup_player_point(db_session, m1, r1_2023, veteran_rb, points=25.0, is_starter=True)
 
-    # 2024 matchups — rookie_qb and rookie_wr are rookies; veteran_rb is NOT
+    # 2024 matchups â€” rookie_qb and rookie_wr are rookies; veteran_rb is NOT
     m2 = await create_matchup(db_session, s2024, r1_2024, r2_2024, week=1, matchup_id=1,
                                match_type="regular", home_points=120.0, away_points=100.0)
     await create_matchup_player_point(db_session, m2, r1_2024, rookie_qb, points=30.0, is_starter=True)
@@ -71,7 +72,7 @@ async def seed_data(db_session):
 @pytest.mark.anyio
 async def test_game_records_only_rookies(client, seed_data):
     """Only rookie-year performances should appear."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular")
     assert resp.status_code == 200
     records = resp.json()["records"]
     names = [r["player_name"] for r in records]
@@ -89,7 +90,7 @@ async def test_game_records_only_rookies(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_order(client, seed_data):
     """Game records should be ordered by points descending."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular")
     records = resp.json()["records"]
     points = [r["points"] for r in records]
     assert points == sorted(points, reverse=True)
@@ -98,7 +99,7 @@ async def test_game_records_order(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_match_type(client, seed_data):
     """Only records for the requested match_type should be returned."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=playoff")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=playoff")
     records = resp.json()["records"]
     assert len(records) == 1
     assert records[0]["player_name"] == "Rookie QB"
@@ -108,7 +109,7 @@ async def test_game_records_filter_match_type(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_starter(client, seed_data):
     """Filter by starter should exclude bench players."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular&roster_type=starter")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular&roster_type=starter")
     records = resp.json()["records"]
     names = [r["player_name"] for r in records]
     assert "Rookie WR" not in names  # was on bench
@@ -117,7 +118,7 @@ async def test_game_records_filter_starter(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_bench(client, seed_data):
     """Filter by bench should only return bench players."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular&roster_type=bench")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular&roster_type=bench")
     records = resp.json()["records"]
     assert len(records) == 1
     assert records[0]["player_name"] == "Rookie WR"
@@ -126,7 +127,7 @@ async def test_game_records_filter_bench(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_position(client, seed_data):
     """Filter by position should only return that position."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular&position=QB")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular&position=QB")
     records = resp.json()["records"]
     assert all(r["position"] == "QB" for r in records)
     assert len(records) == 2  # week 1 and week 2
@@ -135,7 +136,7 @@ async def test_game_records_filter_position(client, seed_data):
 @pytest.mark.anyio
 async def test_game_response_has_all_fields(client, seed_data):
     """Game records should include all expected fields."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
         "rank", "player_name", "position", "team", "points",
@@ -150,7 +151,7 @@ async def test_game_response_has_all_fields(client, seed_data):
 @pytest.mark.anyio
 async def test_season_records_aggregation(client, seed_data):
     """Season records should aggregate points across weeks for rookies only."""
-    resp = await client.get("/api/rookie-records?view=season&match_type=regular&roster_type=starter")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=season&match_type=regular&roster_type=starter")
     records = resp.json()["records"]
     # Rookie QB: 30 + 35 = 65 (2024, his rookie year)
     qb_rec = next(r for r in records if r["player_name"] == "Rookie QB")
@@ -162,7 +163,7 @@ async def test_season_records_aggregation(client, seed_data):
 @pytest.mark.anyio
 async def test_season_records_excludes_non_rookie_year(client, seed_data):
     """Veteran RB's 2024 season should not appear (not his rookie year)."""
-    resp = await client.get("/api/rookie-records?view=season&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=season&match_type=regular")
     records = resp.json()["records"]
     veteran_records = [r for r in records if r["player_name"] == "Veteran RB"]
     # Only his 2023 season (rookie year) should show
@@ -174,7 +175,7 @@ async def test_season_records_excludes_non_rookie_year(client, seed_data):
 @pytest.mark.anyio
 async def test_season_response_has_all_fields(client, seed_data):
     """Season records should include all expected fields."""
-    resp = await client.get("/api/rookie-records?view=season&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=season&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
         "rank", "player_name", "position", "team", "total_points",
@@ -188,7 +189,7 @@ async def test_season_response_has_all_fields(client, seed_data):
 @pytest.mark.anyio
 async def test_invalid_view_rejected(client, seed_data):
     """Career view should be rejected for rookie records."""
-    resp = await client.get("/api/rookie-records?view=career")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=career")
     assert resp.status_code == 422
 
 
@@ -197,6 +198,6 @@ async def test_invalid_view_rejected(client, seed_data):
 @pytest.mark.anyio
 async def test_empty_records(client):
     """Should return empty list when no data exists."""
-    resp = await client.get("/api/rookie-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/rookie-records?view=game&match_type=regular")
     assert resp.status_code == 200
     assert resp.json()["records"] == []

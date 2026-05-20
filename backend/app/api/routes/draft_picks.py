@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Draft, Roster, Season, User
 from app.services.sleeper_client import sleeper_client
 
@@ -16,7 +17,10 @@ router = APIRouter()
 
 
 @router.get("/draft-picks/future")
-async def get_future_draft_picks(db: AsyncSession = Depends(get_db)):
+async def get_future_draft_picks(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Return all future draft picks for every team, with trade provenance.
 
     For each (season, round, original_team) combination, returns who currently
@@ -25,7 +29,12 @@ async def get_future_draft_picks(db: AsyncSession = Depends(get_db)):
     (minimum: next 2 years).
     """
     # ── 1. Current season ─────────────────────────────────────────────────────
-    season_result = await db.execute(select(Season).order_by(desc(Season.year)).limit(1))
+    season_result = await db.execute(
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
+    )
     current_season = season_result.scalar_one_or_none()
     current_year = current_season.year if current_season else 2025
 

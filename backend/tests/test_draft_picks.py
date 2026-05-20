@@ -1,9 +1,10 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 """Tests for the future draft pick tracker endpoint.
 
 Covers:
   - GET /draft-picks/future  (response shape + no 500 with no traded picks)
   - Response has all required fields
-  - Picks are generated for all owners × rounds × seasons
+  - Picks are generated for all owners Ã— rounds Ã— seasons
 """
 
 import pytest
@@ -56,7 +57,7 @@ async def test_future_draft_picks_no_trades(client: AsyncClient, db_session: Asy
         new_callable=AsyncMock,
         return_value=[],
     ):
-        resp = await client.get("/api/draft-picks/future")
+        resp = await client.get(f"{LEAGUE_PREFIX}/draft-picks/future")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -99,7 +100,7 @@ async def test_future_draft_picks_with_trade(client: AsyncClient, db_session: As
         new_callable=AsyncMock,
         return_value=mock_traded,
     ):
-        resp = await client.get("/api/draft-picks/future")
+        resp = await client.get(f"{LEAGUE_PREFIX}/draft-picks/future")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -123,7 +124,7 @@ async def test_future_draft_picks_response_has_all_fields(client: AsyncClient, d
         new_callable=AsyncMock,
         return_value=[],
     ):
-        resp = await client.get("/api/draft-picks/future")
+        resp = await client.get(f"{LEAGUE_PREFIX}/draft-picks/future")
 
     assert resp.status_code == 200
     picks = resp.json()["picks"]
@@ -148,7 +149,7 @@ async def test_future_draft_picks_no_season(client: AsyncClient, db_session: Asy
         new_callable=AsyncMock,
         return_value=[],
     ):
-        resp = await client.get("/api/draft-picks/future")
+        resp = await client.get(f"{LEAGUE_PREFIX}/draft-picks/future")
 
     assert resp.status_code == 200
     data = resp.json()

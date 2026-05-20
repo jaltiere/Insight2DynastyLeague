@@ -163,14 +163,15 @@ def _simulate_playoff_bracket(
 
 
 async def calculate_playoff_odds(
-    db: AsyncSession, season_year: int
+    db: AsyncSession, season_year: int, league_id: str | None = None
 ) -> Dict[str, Any]:
     """Run Monte Carlo simulation for playoff odds."""
 
-    # Get season
-    result = await db.execute(
-        select(Season).where(Season.year == season_year)
-    )
+    # Get season (scoped to league if provided)
+    query = select(Season).where(Season.year == season_year)
+    if league_id:
+        query = query.where(Season.group_id == league_id)
+    result = await db.execute(query)
     season = result.scalar_one_or_none()
     if not season:
         return None

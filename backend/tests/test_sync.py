@@ -1,5 +1,9 @@
 from unittest.mock import AsyncMock, patch
 
+# A single-entry LEAGUES list that matches the test DB's league_id so we don't
+# run 4 real-league syncs in unit tests.
+_TEST_LEAGUES = [{"id": "test_league_001", "slug": "test", "recaps_enabled": False}]
+
 
 def _make_mock_sleeper_client():
     """Create a mock SleeperClient with valid return data for all methods."""
@@ -36,26 +40,31 @@ def _make_mock_sleeper_client():
 
 async def test_sync_league_success(client):
     mock = _make_mock_sleeper_client()
-    with patch("app.services.sync_service.sleeper_client", mock):
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
         response = await client.post("/api/sync/league")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "success"
-    assert data["season"] == "2024"
+    assert len(data["leagues"]) == 1
+    assert data["leagues"][0]["status"] == "success"
+    assert data["leagues"][0]["season"] == "2024"
+    assert data["errors"] == []
 
 
 async def test_sync_league_external_api_failure(client):
     mock = _make_mock_sleeper_client()
     mock.get_nfl_state.side_effect = Exception("Sleeper API is down")
-    with patch("app.services.sync_service.sleeper_client", mock):
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
         response = await client.post("/api/sync/league")
     assert response.status_code == 500
-    assert "Sync failed" in response.json()["detail"]
+    assert "All syncs failed" in response.json()["detail"]
 
 
 async def test_sync_league_idempotent(client):
     mock = _make_mock_sleeper_client()
-    with patch("app.services.sync_service.sleeper_client", mock):
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
         response1 = await client.post("/api/sync/league")
         response2 = await client.post("/api/sync/league")
     assert response1.status_code == 200
@@ -72,7 +81,7 @@ async def test_sync_offseason_transactions(client):
         "season_type": "off",
     }
     mock.get_league.return_value = {
-        "league_id": "test_league_offseason",
+        "league_id": "test_league_001",
         "name": "Test League Offseason",
         "season": "2026",
         "status": "pre_draft",
@@ -96,13 +105,14 @@ async def test_sync_offseason_transactions(client):
         }
     ]
 
-    with patch("app.services.sync_service.sleeper_client", mock):
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
         response = await client.post("/api/sync/league")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "success"
-    assert data["season"] == "2026"
+    assert data["leagues"][0]["status"] == "success"
+    assert data["leagues"][0]["season"] == "2026"
 
     # Verify that get_transactions was called for weeks 1, 2, and 3
     # (not just week 0 or week 1)
@@ -123,7 +133,7 @@ async def test_sync_regular_season_transactions(client):
         "season_type": "regular",
     }
     mock.get_league.return_value = {
-        "league_id": "test_league_regular",
+        "league_id": "test_league_001",
         "name": "Test League Regular",
         "season": "2025",
         "status": "in_season",
@@ -133,12 +143,13 @@ async def test_sync_regular_season_transactions(client):
     }
     mock.get_transactions.return_value = []
 
-    with patch("app.services.sync_service.sleeper_client", mock):
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
         response = await client.post("/api/sync/league")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "success"
+    assert data["leagues"][0]["status"] == "success"
 
     # Verify that get_transactions was called for weeks 1-5
     calls = mock.get_transactions.call_args_list

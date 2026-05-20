@@ -1,21 +1,22 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from tests.conftest import (
-    create_player, create_user, create_league, create_season, create_draft,
+    create_player, create_user, create_league, create_season, create_draft, create_roster,
 )
 
 
 async def test_search_requires_query(client):
-    response = await client.get("/api/search")
+    response = await client.get(f"{LEAGUE_PREFIX}/search")
     assert response.status_code == 422
 
 
 async def test_search_requires_min_length(client):
-    response = await client.get("/api/search?q=a")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=a")
     assert response.status_code == 422
 
 
 async def test_search_returns_structure(client, db_session):
-    response = await client.get("/api/search?q=no_match_xyz")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=no_match_xyz")
     assert response.status_code == 200
     data = response.json()
     assert "query" in data
@@ -44,7 +45,7 @@ async def test_search_finds_player_by_name(client, db_session):
         team="KC",
     )
 
-    response = await client.get("/api/search?q=Justin")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=Justin")
     assert response.status_code == 200
     data = response.json()
     players = [r for r in data["results"] if r["type"] == "player"]
@@ -66,7 +67,7 @@ async def test_search_finds_player_by_last_name(client, db_session):
         team="KC",
     )
 
-    response = await client.get("/api/search?q=Mahomes")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=Mahomes")
     assert response.status_code == 200
     data = response.json()
     player_ids = [r["id"] for r in data["results"] if r["type"] == "player"]
@@ -74,10 +75,14 @@ async def test_search_finds_player_by_last_name(client, db_session):
 
 
 async def test_search_finds_owner_by_display_name(client, db_session):
-    await create_user(db_session, id="u1", username="jsmith", display_name="Jack Smith")
-    await create_user(db_session, id="u2", username="bdoe", display_name="Bob Doe")
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", username="jsmith", display_name="Jack Smith")
+    u2 = await create_user(db_session, id="u2", username="bdoe", display_name="Bob Doe")
+    await create_roster(db_session, season, u1, roster_id=1)
+    await create_roster(db_session, season, u2, roster_id=2)
 
-    response = await client.get("/api/search?q=Jack")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=Jack")
     assert response.status_code == 200
     data = response.json()
     owners = [r for r in data["results"] if r["type"] == "owner"]
@@ -88,9 +93,12 @@ async def test_search_finds_owner_by_display_name(client, db_session):
 
 
 async def test_search_finds_owner_by_username(client, db_session):
-    await create_user(db_session, id="u1", username="dynastyking", display_name="Dave K")
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", username="dynastyking", display_name="Dave K")
+    await create_roster(db_session, season, u1, roster_id=1)
 
-    response = await client.get("/api/search?q=dynastyking")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=dynastyking")
     assert response.status_code == 200
     data = response.json()
     owners = [r for r in data["results"] if r["type"] == "owner"]
@@ -103,7 +111,7 @@ async def test_search_finds_draft_by_year(client, db_session):
     season = await create_season(db_session, league, year=2022)
     await create_draft(db_session, season, id="d2022", year=2022, rounds=14, status="complete")
 
-    response = await client.get("/api/search?q=2022")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=2022")
     assert response.status_code == 200
     data = response.json()
     drafts = [r for r in data["results"] if r["type"] == "draft"]
@@ -117,7 +125,7 @@ async def test_search_finds_draft_by_keyword(client, db_session):
     season = await create_season(db_session, league, year=2023)
     await create_draft(db_session, season, id="d2023", year=2023, rounds=14, status="complete")
 
-    response = await client.get("/api/search?q=draft")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=draft")
     assert response.status_code == 200
     data = response.json()
     drafts = [r for r in data["results"] if r["type"] == "draft"]
@@ -135,7 +143,7 @@ async def test_search_result_has_required_fields(client, db_session):
         team="MIA",
     )
 
-    response = await client.get("/api/search?q=Tyreek")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=Tyreek")
     assert response.status_code == 200
     data = response.json()
     result = next(r for r in data["results"] if r["type"] == "player")
@@ -155,9 +163,12 @@ async def test_search_returns_multiple_types(client, db_session):
         position="RB",
         team="SF",
     )
-    await create_user(db_session, id="u1", username="jacksonf", display_name="Jackson Fan")
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", username="jacksonf", display_name="Jackson Fan")
+    await create_roster(db_session, season, u1, roster_id=1)
 
-    response = await client.get("/api/search?q=Jackson")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=Jackson")
     assert response.status_code == 200
     data = response.json()
     types = {r["type"] for r in data["results"]}
@@ -176,7 +187,7 @@ async def test_search_is_case_insensitive(client, db_session):
         team="NO",
     )
 
-    response = await client.get("/api/search?q=derek")
+    response = await client.get(f"{LEAGUE_PREFIX}/search?q=derek")
     assert response.status_code == 200
     data = response.json()
     player_ids = [r["id"] for r in data["results"] if r["type"] == "player"]

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func, case
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Transaction, Season, Roster, User, Player
 from typing import List, Dict, Any, Optional
 
@@ -10,6 +11,7 @@ router = APIRouter()
 
 @router.get("/transactions/recent")
 async def get_recent_transactions(
+    league_id: str = Depends(get_league_id),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
@@ -17,6 +19,7 @@ async def get_recent_transactions(
     result = await db.execute(
         select(Transaction, Season)
         .join(Season, Transaction.season_id == Season.id)
+        .where(Season.group_id == league_id)
         .order_by(desc(Transaction.status_updated))
         .limit(limit)
     )
@@ -139,14 +142,14 @@ async def get_recent_transactions(
 
 @router.get("/transactions/summary")
 async def get_transaction_summary(
+    league_id: str = Depends(get_league_id),
     season: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get transaction counts per owner, optionally filtered by season year."""
-    # Build base query for transactions
     query = select(Transaction, Season).join(
         Season, Transaction.season_id == Season.id
-    ).where(Transaction.status == "complete")
+    ).where(Transaction.status == "complete", Season.group_id == league_id)
 
     if season is not None:
         query = query.where(Season.year == season)
@@ -220,20 +223,21 @@ async def get_transaction_summary(
 
 @router.get("/transactions/by-owner")
 async def get_transactions_by_owner(
+    league_id: str = Depends(get_league_id),
     user_id: str = Query(...),
     type: str = Query(...),
     season: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get full transaction details for a specific owner and type."""
-    # First, find the roster_ids for this user in relevant seasons
-    roster_query = select(Roster.roster_id, Roster.season_id).where(
-        Roster.user_id == user_id
+    # Find roster_ids for this user in this league's seasons
+    roster_query = (
+        select(Roster.roster_id, Roster.season_id)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Roster.user_id == user_id, Season.group_id == league_id)
     )
     if season is not None:
-        roster_query = roster_query.join(
-            Season, Roster.season_id == Season.id
-        ).where(Season.year == season)
+        roster_query = roster_query.where(Season.year == season)
 
     result = await db.execute(roster_query)
     user_rosters = result.all()  # [(roster_id, season_id), ...]

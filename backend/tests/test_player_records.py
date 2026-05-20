@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from tests.conftest import (
     create_league, create_user, create_season, create_roster,
@@ -58,7 +59,7 @@ async def seed_data(db_session):
 @pytest.mark.anyio
 async def test_game_records_top10_order(client, seed_data):
     """Top game records should be ordered by points descending."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular")
     assert resp.status_code == 200
     data = resp.json()
     records = data["records"]
@@ -71,7 +72,7 @@ async def test_game_records_top10_order(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_match_type(client, seed_data):
     """Only records for the requested match_type should be returned."""
-    resp = await client.get("/api/player-records?view=game&match_type=playoff")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=playoff")
     assert resp.status_code == 200
     records = resp.json()["records"]
     assert len(records) == 1
@@ -82,7 +83,7 @@ async def test_game_records_filter_match_type(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_starter(client, seed_data):
     """Filter by starter should exclude bench players."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular&roster_type=starter")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular&roster_type=starter")
     records = resp.json()["records"]
     assert all(r["is_starter"] for r in records)
     # Tim WR was bench (5.0 pts) - should not appear
@@ -93,7 +94,7 @@ async def test_game_records_filter_starter(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_bench(client, seed_data):
     """Filter by bench should only return bench players."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular&roster_type=bench")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular&roster_type=bench")
     records = resp.json()["records"]
     assert len(records) == 1
     assert records[0]["player_name"] == "Tim WR"
@@ -103,7 +104,7 @@ async def test_game_records_filter_bench(client, seed_data):
 @pytest.mark.anyio
 async def test_game_records_filter_position(client, seed_data):
     """Filter by position should only return that position."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular&position=QB")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular&position=QB")
     records = resp.json()["records"]
     assert all(r["position"] == "QB" for r in records)
     assert len(records) == 2  # week 1 and week 2
@@ -112,7 +113,7 @@ async def test_game_records_filter_position(client, seed_data):
 @pytest.mark.anyio
 async def test_game_response_has_all_fields(client, seed_data):
     """Game records should include all expected fields."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
         "rank", "player_id", "player_name", "position", "team", "points",
@@ -127,7 +128,7 @@ async def test_game_response_has_all_fields(client, seed_data):
 @pytest.mark.anyio
 async def test_season_records_aggregation(client, seed_data):
     """Season records should aggregate points across weeks."""
-    resp = await client.get("/api/player-records?view=season&match_type=regular&roster_type=starter")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=season&match_type=regular&roster_type=starter")
     records = resp.json()["records"]
     # QB: 30 + 25 = 55, RB: 20 + 35 = 55
     assert len(records) >= 2
@@ -140,7 +141,7 @@ async def test_season_records_aggregation(client, seed_data):
 @pytest.mark.anyio
 async def test_season_response_has_all_fields(client, seed_data):
     """Season records should include all expected fields."""
-    resp = await client.get("/api/player-records?view=season&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=season&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
         "rank", "player_id", "player_name", "position", "team", "total_points",
@@ -156,7 +157,7 @@ async def test_career_records_aggregation(client, seed_data):
     """Career records should aggregate across all seasons."""
     # QB has regular (30+25) + playoff (40) = 95 total across match types
     # But career only filters by one match_type at a time
-    resp = await client.get("/api/player-records?view=career&match_type=regular&roster_type=starter")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=career&match_type=regular&roster_type=starter")
     records = resp.json()["records"]
     qb_rec = next(r for r in records if r["player_name"] == "Joe QB")
     assert qb_rec["total_points"] == 55.0
@@ -166,7 +167,7 @@ async def test_career_records_aggregation(client, seed_data):
 @pytest.mark.anyio
 async def test_career_response_has_all_fields(client, seed_data):
     """Career records should include all expected fields."""
-    resp = await client.get("/api/player-records?view=career&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=career&match_type=regular")
     rec = resp.json()["records"][0]
     expected_fields = {
         "rank", "player_id", "player_name", "position", "team", "total_points",
@@ -178,7 +179,7 @@ async def test_career_response_has_all_fields(client, seed_data):
 @pytest.mark.anyio
 async def test_career_multiple_owners(client, db_session):
     """Career records should show '(multiple)' when player had different owners."""
-    league = await create_league(db_session, id="league2")
+    league = await create_league(db_session)
     u1 = await create_user(db_session, id="mu1", username="multi1", display_name="Multi One")
     u2 = await create_user(db_session, id="mu2", username="multi2", display_name="Multi Two")
 
@@ -200,7 +201,7 @@ async def test_career_multiple_owners(client, db_session):
 
     await db_session.commit()
 
-    resp = await client.get("/api/player-records?view=career&match_type=regular&position=WR")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=career&match_type=regular&position=WR")
     records = resp.json()["records"]
     traded = next(r for r in records if r["player_name"] == "Traded Guy")
     assert traded["owner_name"] == "(multiple)"
@@ -213,6 +214,6 @@ async def test_career_multiple_owners(client, db_session):
 @pytest.mark.anyio
 async def test_empty_records(client):
     """Should return empty list when no data exists."""
-    resp = await client.get("/api/player-records?view=game&match_type=regular")
+    resp = await client.get(f"{LEAGUE_PREFIX}/player-records?view=game&match_type=regular")
     assert resp.status_code == 200
     assert resp.json()["records"] == []

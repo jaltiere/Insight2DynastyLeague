@@ -2,30 +2,51 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-export const apiClient = axios.create({
+// Module-level slug used by the league-scoped interceptor.
+// Updated by LeagueContext whenever the active league changes.
+let _leagueSlug = 'insight2dynasty';
+
+export function setCurrentLeagueSlug(slug: string) {
+  _leagueSlug = slug;
+}
+
+// Global client — no league prefix (players, leagues list, sync)
+const globalApiClient = axios.create({
   baseURL: `${API_BASE_URL}/api`,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
+});
+
+// League-scoped client — automatically prefixes /{slug}/ to every request URL
+const apiClient = axios.create({
+  baseURL: `${API_BASE_URL}/api`,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+apiClient.interceptors.request.use((config) => {
+  config.url = `/${_leagueSlug}${config.url}`;
+  return config;
 });
 
 // API endpoint functions
 export const api = {
-  // Standings
+  // Leagues (global — no slug prefix)
+  getLeagues: () => globalApiClient.get('/leagues').then(res => res.data),
+
+  // Standings (league-scoped)
   getStandings: () => apiClient.get('/standings').then(res => res.data),
   getCurrentStandings: () => apiClient.get('/standings'),
   getHistoricalStandings: (season: number) => apiClient.get(`/standings/${season}`),
 
-  // Players
+  // Players (global — not league-scoped in backend)
   getPlayers: (params?: { search?: string; position?: string; limit?: number; offset?: number }) =>
-    apiClient.get('/players', { params }),
-  getPlayerDetails: (playerId: string) => apiClient.get(`/players/${playerId}`),
+    globalApiClient.get('/players', { params }),
+  getPlayerDetails: (playerId: string) => globalApiClient.get(`/players/${playerId}`),
 
-  // Owners
+  // Owners (league-scoped)
   getAllOwners: () => apiClient.get('/owners'),
   getOwnerDetails: (ownerId: string) => apiClient.get(`/owners/${ownerId}`),
 
-  // Matchups
+  // Matchups (league-scoped)
   getHeadToHead: (owner1: string, owner2: string) =>
     apiClient.get(`/matchups/head-to-head/${owner1}/${owner2}`),
   getH2HMatrix: (matchType?: string) =>
@@ -33,16 +54,16 @@ export const api = {
       params: matchType ? { match_type: matchType } : {},
     }),
 
-  // Drafts
+  // Drafts (league-scoped)
   getAllDrafts: () => apiClient.get('/drafts').then(res => res.data),
   getDraftByYear: (year: number) => apiClient.get(`/drafts/${year}`).then(res => res.data),
   getCurrentDraft: () => apiClient.get('/drafts/current').then(res => res.data),
 
-  // League History
+  // League History (league-scoped)
   getAllHistory: () => apiClient.get('/league-history').then(res => res.data),
   getSeasonHistory: (season: number) => apiClient.get(`/league-history/${season}`),
 
-  // Player Records
+  // Player Records (league-scoped)
   getPlayerRecords: (params?: {
     view?: string;
     match_type?: string;
@@ -51,7 +72,7 @@ export const api = {
     limit?: number;
   }) => apiClient.get('/player-records', { params }).then(res => res.data),
 
-  // Rookie Records
+  // Rookie Records (league-scoped)
   getRookieRecords: (params?: {
     view?: string;
     match_type?: string;
@@ -60,13 +81,13 @@ export const api = {
     limit?: number;
   }) => apiClient.get('/rookie-records', { params }).then(res => res.data),
 
-  // Taxi Squads
+  // Taxi Squads (league-scoped)
   getTaxiSquads: () => apiClient.get('/taxi-squads').then(res => res.data),
 
-  // Seasons
+  // Seasons (league-scoped)
   getSeasons: () => apiClient.get('/seasons').then(res => res.data),
 
-  // Transactions
+  // Transactions (league-scoped)
   getRecentTransactions: (limit: number = 20) =>
     apiClient.get('/transactions/recent', { params: { limit } }).then(res => res.data),
   getTransactionSummary: (season?: number) =>
@@ -76,23 +97,23 @@ export const api = {
       params: { user_id: userId, type, ...(season ? { season } : {}) },
     }).then(res => res.data),
 
-  // Trade Grades
+  // Trade Grades (league-scoped)
   getTradeGrades: (params?: { season?: number; sort?: string; owner_id?: string }) =>
     apiClient.get('/trade-grades', { params }).then(res => res.data),
   getTradeGrade: (tradeId: string) =>
     apiClient.get(`/trade-grades/${tradeId}`).then(res => res.data),
 
-  // Draft Grades
+  // Draft Grades (league-scoped)
   getDraftGrades: (params?: { draft_type?: string; owner_id?: string }) =>
     apiClient.get('/draft-grades', { params }).then(res => res.data),
   getDraftGrade: (draftId: string) =>
     apiClient.get(`/draft-grades/${draftId}`).then(res => res.data),
 
-  // Playoffs
+  // Playoffs (league-scoped)
   getPlayoffOdds: (season?: number) =>
     apiClient.get(season ? `/playoffs/${season}` : '/playoffs').then(res => res.data),
 
-  // Power Rankings
+  // Power Rankings (league-scoped)
   getPowerRankings: (season?: number) =>
     apiClient.get(season ? `/power-rankings/${season}` : '/power-rankings').then(res => res.data),
   getRosterBreakdown: (season: number, rosterId: number) =>
@@ -100,7 +121,7 @@ export const api = {
   getPowerRankingsTrends: (season: number) =>
     apiClient.get(`/power-rankings/${season}/trends`).then(res => res.data),
 
-  // Matchup Recaps
+  // Matchup Recaps (league-scoped)
   getCurrentWeekMatchups: () =>
     apiClient.get('/matchup-recaps/current').then(res => res.data),
   getPreviousWeekRecaps: () =>
@@ -110,14 +131,14 @@ export const api = {
   getNewsletterRecaps: (week: number, season?: number) =>
     apiClient.get(`/matchup-recaps/newsletter/${week}`, { params: { season } }).then(res => res.data),
 
-  // Newsletter
+  // Newsletter (league-scoped)
   getNewsletter: (week: number, season?: number) =>
     apiClient.get(`/newsletter/${week}`, { params: season ? { season } : {} }).then(res => res.data),
 
-  // Roster Analysis
+  // Roster Analysis (league-scoped)
   getRosterAnalysis: () => apiClient.get('/roster-analysis').then(res => res.data),
 
-  // Trade Calculator
+  // Trade Calculator (league-scoped)
   getTradeCalcOwners: () => apiClient.get('/trade-calculator/owners').then(res => res.data),
   getTradeCalcRoster: (userId: string) => apiClient.get(`/trade-calculator/roster/${userId}`).then(res => res.data),
   getTradeCalcRosterPicks: (userId: string) => apiClient.get(`/trade-calculator/roster-picks/${userId}`).then(res => res.data),
@@ -126,19 +147,19 @@ export const api = {
   getH2HTrades: (userIdA: string, userIdB: string) =>
     apiClient.get(`/trade-calculator/h2h-trades/${userIdA}/${userIdB}`).then(res => res.data),
 
-  // Draft Picks
+  // Draft Picks (league-scoped)
   getFutureDraftPicks: () => apiClient.get('/draft-picks/future').then(res => res.data),
 
-  // Team Records
+  // Team Records (league-scoped)
   getTeamRecords: () => apiClient.get('/team-records').then(res => res.data),
 
-  // Free Agents
+  // Free Agents (global players endpoint, filtered)
   getFreeAgents: (params?: { search?: string; position?: string; limit?: number; offset?: number }) =>
     apiClient.get('/free-agents', { params }).then(res => res.data),
 
-  // Search
+  // Search (league-scoped)
   search: (q: string) => apiClient.get('/search', { params: { q } }).then(res => res.data),
 
-  // Sync
-  syncLeagueData: () => apiClient.post('/sync/league'),
+  // Sync (global)
+  syncLeagueData: () => globalApiClient.post('/sync/league'),
 };

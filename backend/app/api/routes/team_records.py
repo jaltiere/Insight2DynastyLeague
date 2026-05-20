@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from collections import defaultdict
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import User, Roster, Matchup, Season, SeasonAward
 from typing import List, Dict, Any
 
@@ -39,33 +40,47 @@ def _compute_streaks(games: List[Dict], result_char: str) -> tuple:
 
 
 @router.get("/team-records")
-async def get_team_records(db: AsyncSession = Depends(get_db)):
+async def get_team_records(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """All-time team-level records: scoring, season totals, margins, streaks, unluckiest."""
 
-    # Load users
-    result = await db.execute(select(User))
+    # Load users active in this league
+    result = await db.execute(
+        select(User)
+        .join(Roster, User.id == Roster.user_id)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Season.group_id == league_id)
+        .distinct()
+    )
     users = result.scalars().all()
     user_map = {u.id: u for u in users}
 
-    # Load rosters
-    result = await db.execute(select(Roster))
+    # Load rosters scoped to this league
+    result = await db.execute(
+        select(Roster)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Season.group_id == league_id)
+    )
     rosters = result.scalars().all()
     roster_to_user = {r.id: r.user_id for r in rosters}
     roster_map = {r.id: r for r in rosters}
 
-    # Load all matchups ordered chronologically
+    # Load all matchups scoped to this league
     result = await db.execute(
         select(Matchup, Season)
         .join(Season, Matchup.season_id == Season.id)
+        .where(Season.group_id == league_id)
         .order_by(Season.year, Matchup.week)
     )
     matchups_with_seasons = result.all()
 
-    # Load champions per season
+    # Load champions per season for this league
     result = await db.execute(
         select(SeasonAward, Season)
         .join(Season, SeasonAward.season_id == Season.id)
-        .where(SeasonAward.award_type == "champion")
+        .where(SeasonAward.award_type == "champion", Season.group_id == league_id)
     )
     champion_rows = result.all()
     champion_user_per_season: Dict[int, str] = {season.id: award.user_id for award, season in champion_rows}
@@ -120,7 +135,7 @@ async def get_team_records(db: AsyncSession = Depends(get_db)):
         select(Roster, Season, User)
         .join(Season, Roster.season_id == Season.id)
         .join(User, Roster.user_id == User.id)
-        .where(Roster.user_id.isnot(None))
+        .where(Roster.user_id.isnot(None), Season.group_id == league_id)
     )
     roster_season_rows = result.all()
 

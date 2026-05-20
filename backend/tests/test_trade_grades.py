@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league, create_season, create_user, create_roster,
     create_player, create_transaction, create_matchup,
@@ -66,7 +67,7 @@ async def _add_player_points(db, season, roster, player, week, points, is_starte
 
 async def test_trade_grades_empty(client):
     """No trades should return an empty list."""
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     assert response.status_code == 200
     assert response.json()["trades"] == []
 
@@ -85,7 +86,7 @@ async def test_trade_grades_basic_trade(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     assert response.status_code == 200
     data = response.json()
     assert len(data["trades"]) == 1
@@ -114,7 +115,7 @@ async def test_trade_grades_even_trade(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -134,14 +135,14 @@ async def test_trade_grades_lopsided_trade(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
     assert not trade["anomaly"]
     winner = trade["sides"][0]
     loser = trade["sides"][1]
-    # Winner got 187.5 weighted pts (25*1.5*5) — value cap allows up to B+
+    # Winner got 187.5 weighted pts (25*1.5*5) â€” value cap allows up to B+
     assert winner["grade"] in ("A+", "A", "A-", "B+", "B")
     assert loser["grade"] in ("F", "D-", "D", "D+", "C-", "C")
 
@@ -158,7 +159,7 @@ async def test_trade_grades_bench_weighting(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -183,7 +184,7 @@ async def test_trade_grades_player_cut(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -231,7 +232,7 @@ async def test_trade_grades_with_draft_picks(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     assert len(data["trades"]) == 1
 
@@ -303,7 +304,7 @@ async def test_trade_grades_pick_resolved(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -341,7 +342,7 @@ async def test_trade_grades_season_filter(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades?season=2024")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades?season=2024")
     data = response.json()
     assert len(data["trades"]) == 1
     assert data["trades"][0]["season"] == 2024
@@ -391,18 +392,18 @@ async def test_trade_grades_sort_options(client, db_session):
     await db_session.flush()
 
     # Sort by lopsided (default)
-    resp = await client.get("/api/trade-grades?sort=lopsided")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-grades?sort=lopsided")
     data = resp.json()
     assert len(data["trades"]) == 2
     assert data["trades"][0]["lopsidedness"] >= data["trades"][1]["lopsidedness"]
 
     # Sort by recent
-    resp = await client.get("/api/trade-grades?sort=recent")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-grades?sort=recent")
     data = resp.json()
     assert data["trades"][0]["date"] >= data["trades"][1]["date"]
 
     # Sort by even
-    resp = await client.get("/api/trade-grades?sort=even")
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-grades?sort=even")
     data = resp.json()
     assert data["trades"][0]["lopsidedness"] <= data["trades"][1]["lopsidedness"]
 
@@ -417,7 +418,7 @@ async def test_trade_grades_single_trade(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades/trade_001")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades/trade_001")
     assert response.status_code == 200
     data = response.json()
     assert data["trade_id"] == "trade_001"
@@ -426,7 +427,7 @@ async def test_trade_grades_single_trade(client, db_session):
 
 async def test_trade_grades_single_trade_not_found(client):
     """GET /trade-grades/{trade_id} should 404 for missing trade."""
-    response = await client.get("/api/trade-grades/nonexistent")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades/nonexistent")
     assert response.status_code == 404
 
 
@@ -440,7 +441,7 @@ async def test_trade_grades_response_fields(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -517,7 +518,7 @@ async def test_trade_grades_replacement_factor(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
@@ -549,27 +550,27 @@ async def test_trade_grades_owner_filter(client, db_session):
     )
     await db_session.flush()
 
-    # Filter to user1 — should only get trade_001 (involves roster 1)
-    response = await client.get("/api/trade-grades?owner_id=user1")
+    # Filter to user1 â€” should only get trade_001 (involves roster 1)
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades?owner_id=user1")
     data = response.json()
     assert len(data["trades"]) == 1
     assert data["trades"][0]["trade_id"] == "trade_001"
 
-    # Filter to user3 — should only get trade_other
-    response = await client.get("/api/trade-grades?owner_id=user3")
+    # Filter to user3 â€” should only get trade_other
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades?owner_id=user3")
     data = response.json()
     assert len(data["trades"]) == 1
     assert data["trades"][0]["trade_id"] == "trade_other"
 
-    # No filter — should get both
-    response = await client.get("/api/trade-grades")
+    # No filter â€” should get both
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     assert len(data["trades"]) == 2
 
 
 async def test_trade_grades_anomaly_one_sided(client, db_session):
     """A trade where one side receives nothing should be flagged as an anomaly
-    with N/A grades — not a real trade."""
+    with N/A grades â€” not a real trade."""
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2024)
     user1 = await create_user(db_session, id="user1", username="owner1", display_name="Owner One")
@@ -593,7 +594,7 @@ async def test_trade_grades_anomaly_one_sided(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     assert len(data["trades"]) == 1
     trade = data["trades"][0]
@@ -608,18 +609,18 @@ async def test_trade_grades_low_value_grade_cap(client, db_session):
     season, r1, r2, pa, pb, txn = await _setup_basic_trade(db_session)
 
     # Winner gets 3pts starter (4.5 weighted), loser gets 1pt starter (1.5 weighted).
-    # Share ≈ 75% which would normally yield A-, but total value is tiny.
+    # Share â‰ˆ 75% which would normally yield A-, but total value is tiny.
     await _add_player_points(db_session, season, r2, pa, 6, 3.0, is_starter=True)
     await _add_player_points(db_session, season, r1, pb, 6, 1.0, is_starter=True)
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     data = response.json()
     trade = data["trades"][0]
 
     assert not trade["anomaly"]
     winner = trade["sides"][0]
-    # 4.5 weighted points < 25 threshold → capped at "C"
+    # 4.5 weighted points < 25 threshold â†’ capped at "C"
     assert winner["grade"] not in ("A+", "A", "A-", "B+", "B", "B-"), (
         f"Low-value trade winner should be capped, got {winner['grade']}"
     )
@@ -642,15 +643,15 @@ async def test_trade_grades_excludes_non_trades(client, db_session):
     )
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     assert response.status_code == 200
     assert response.json()["trades"] == []
 
 
 async def test_trade_grades_full_career_credit_after_retrade(client, db_session):
     """Player B acquired by user1 and later re-traded to user3.
-    User1 should get full career credit for Player B's points — including
-    weeks after the re-trade — not just the weeks B was on user1's roster."""
+    User1 should get full career credit for Player B's points â€” including
+    weeks after the re-trade â€” not just the weeks B was on user1's roster."""
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2024, regular_season_weeks=14)
     user1 = await create_user(db_session, id="u1", username="owner1", display_name="Owner One")
@@ -708,7 +709,7 @@ async def test_trade_grades_full_career_credit_after_retrade(client, db_session)
 
     await db_session.flush()
 
-    response = await client.get("/api/trade-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
     assert response.status_code == 200
     trades = response.json()["trades"]
 

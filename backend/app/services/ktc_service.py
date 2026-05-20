@@ -105,20 +105,13 @@ def _extract_players_array(html: str) -> list[dict]:
     return json.loads(match.group(1))
 
 
-def _get_value(entry: dict, scoring_format: str) -> int:
-    """Extract the KTC value for the configured scoring format."""
-    if scoring_format == "superflex":
-        vals = entry.get("superflexValues") or entry.get("oneQBValues") or {}
-    else:
-        vals = entry.get("oneQBValues") or entry.get("superflexValues") or {}
+def _get_value(entry: dict, key: str) -> int:
+    vals = entry.get(key) or {}
     return int(vals.get("value") or 0)
 
 
-def _get_rank(entry: dict, scoring_format: str) -> Optional[int]:
-    if scoring_format == "superflex":
-        vals = entry.get("superflexValues") or entry.get("oneQBValues") or {}
-    else:
-        vals = entry.get("oneQBValues") or entry.get("superflexValues") or {}
+def _get_rank(entry: dict, key: str) -> Optional[int]:
+    vals = entry.get(key) or {}
     r = vals.get("rank")
     return int(r) if r is not None else None
 
@@ -126,9 +119,13 @@ def _get_rank(entry: dict, scoring_format: str) -> Optional[int]:
 async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> dict:
     """Fetch KTC values and upsert into player_values table.
 
+    Both 1QB and superflex values are always stored regardless of scoring_format.
+    The scoring_format param is kept for API compatibility but no longer controls
+    which values are saved.
+
     Returns a summary dict with counts of updated/skipped entries.
     """
-    logger.info("Fetching KTC dynasty values (format=%s)...", scoring_format)
+    logger.info("Fetching KTC dynasty values...")
 
     try:
         html = await _fetch_ktc_html()
@@ -158,8 +155,10 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
     for entry in raw_players:
         position = entry.get("position", "")
         ktc_name = entry.get("playerName", "")
-        value = _get_value(entry, scoring_format)
-        rank = _get_rank(entry, scoring_format)
+        value = _get_value(entry, "oneQBValues")
+        rank = _get_rank(entry, "oneQBValues")
+        superflex_value = _get_value(entry, "superflexValues") or None
+        superflex_rank = _get_rank(entry, "superflexValues")
         team = entry.get("team") or None
         age_raw = entry.get("age")
         age_str = str(age_raw) if age_raw is not None else None
@@ -179,6 +178,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 row.ktc_name = ktc_name
                 row.value = value
                 row.rank = rank
+                row.superflex_value = superflex_value
+                row.superflex_rank = superflex_rank
                 row.source = "ktc"
                 row.position = "RDP"
                 row.last_updated = now
@@ -188,6 +189,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                     ktc_name=ktc_name,
                     value=value,
                     rank=rank,
+                    superflex_value=superflex_value,
+                    superflex_rank=superflex_rank,
                     source="ktc",
                     position="RDP",
                     last_updated=now,
@@ -213,6 +216,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 row.ktc_name = ktc_name
                 row.value = value
                 row.rank = rank
+                row.superflex_value = superflex_value
+                row.superflex_rank = superflex_rank
                 row.source = "ktc"
                 row.position = position
                 row.team = team
@@ -224,6 +229,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                     ktc_name=ktc_name,
                     value=value,
                     rank=rank,
+                    superflex_value=superflex_value,
+                    superflex_rank=superflex_rank,
                     source="ktc",
                     position=position,
                     team=team,
@@ -239,7 +246,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
         "players_updated": updated,
         "picks_updated": picks_updated,
         "players_skipped_no_match": skipped_no_match,
-        "scoring_format": scoring_format,
+        "scoring_formats_stored": ["1qb", "superflex"],
         "refreshed_at": now.isoformat(),
     }
     logger.info("KTC refresh complete: %s", summary)

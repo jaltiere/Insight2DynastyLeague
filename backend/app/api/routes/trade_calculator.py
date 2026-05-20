@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, or_, func
 
 from app.database import get_db
-from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup
+from app.api.deps import get_league_id
+from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup, League
 from app.models.player_value import PlayerValue
 from app.config import get_settings
 from app.services.ktc_service import refresh_ktc_values
@@ -24,28 +25,51 @@ from app.api.routes.power_rankings import _calculate_player_stats
 router = APIRouter()
 
 
-async def _get_current_season(db: AsyncSession):
-    result = await db.execute(select(Season).order_by(desc(Season.year)).limit(1))
+async def _get_current_season(db: AsyncSession, league_id: str):
+    result = await db.execute(
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
+    )
     return result.scalar_one_or_none()
 
 
-async def _build_value_map(db: AsyncSession) -> dict[str, int]:
-    """Return {player_id: ktc_value} for all cached player rows."""
+async def _get_league_scoring_format(db: AsyncSession, league_id: str) -> str:
+    """Return 'superflex' or '1qb' based on the league's roster positions."""
     result = await db.execute(
-        select(PlayerValue.player_id, PlayerValue.value).where(
+        select(League)
+        .join(Season, League.id == Season.league_id)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
+    )
+    league = result.scalar_one_or_none()
+    positions = league.roster_positions if league else []
+    return "superflex" if "SUPER_FLEX" in (positions or []) else "1qb"
+
+
+async def _build_value_map(db: AsyncSession, superflex: bool = False) -> dict[str, int]:
+    """Return {player_id: ktc_value} for all cached player rows."""
+    col = PlayerValue.superflex_value if superflex else PlayerValue.value
+    result = await db.execute(
+        select(PlayerValue.player_id, col).where(
             PlayerValue.player_id.isnot(None)
         )
     )
-    return {row.player_id: row.value for row in result.all()}
+    return {row[0]: (row[1] or 0) for row in result.all()}
 
 
 @router.get("/trade-calculator/owners")
-async def get_owners(db: AsyncSession = Depends(get_db)):
+async def get_owners(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Return all owners in the current season with roster_id, team info, and classification."""
     from app.api.routes.roster_analysis import _classify_team
     from statistics import median
 
-    season = await _get_current_season(db)
+    season = await _get_current_season(db, league_id)
     if not season:
         return {"season": None, "owners": []}
 
@@ -113,9 +137,13 @@ async def get_owners(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/trade-calculator/roster/{user_id}")
-async def get_roster_with_values(user_id: str, db: AsyncSession = Depends(get_db)):
+async def get_roster_with_values(
+    user_id: str,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Return an owner's current roster with KTC values attached to each player."""
-    season = await _get_current_season(db)
+    season = await _get_current_season(db, league_id)
     if not season:
         raise HTTPException(status_code=404, detail="No current season found")
 
@@ -147,13 +175,17 @@ async def get_roster_with_values(user_id: str, db: AsyncSession = Depends(get_db
     )
     players_by_id = {p.id: p for p in p_result.scalars().all()}
 
-    # Fetch KTC values for these players
+    # Fetch KTC values for these players using the league's scoring format
+    scoring_format = await _get_league_scoring_format(db, league_id)
+    superflex = scoring_format == "superflex"
+    val_col = PlayerValue.superflex_value if superflex else PlayerValue.value
+    rank_col = PlayerValue.superflex_rank if superflex else PlayerValue.rank
     v_result = await db.execute(
-        select(PlayerValue.player_id, PlayerValue.value, PlayerValue.rank).where(
+        select(PlayerValue.player_id, val_col, rank_col).where(
             PlayerValue.player_id.in_(player_ids)
         )
     )
-    values_by_id = {row.player_id: (row.value, row.rank) for row in v_result.all()}
+    values_by_id = {row[0]: (row[1] or 0, row[2]) for row in v_result.all()}
 
     # Fetch league PPG for each player (all-time avg in this league's scoring)
     league_ppg = await _calculate_player_stats(player_ids, db)
@@ -224,6 +256,7 @@ async def get_roster_with_values(user_id: str, db: AsyncSession = Depends(get_db
         "user_id": user_id,
         "display_name": user.display_name or user.username,
         "team_name": roster.team_name,
+        "scoring_format": scoring_format,
         "players": players_out,
     }
 
@@ -231,9 +264,15 @@ async def get_roster_with_values(user_id: str, db: AsyncSession = Depends(get_db
 @router.get("/trade-calculator/search")
 async def search_players(
     q: str = Query(..., min_length=2, description="Player name search"),
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Search players by name, returning KTC values. Supports free-form lookup."""
+    scoring_format = await _get_league_scoring_format(db, league_id)
+    superflex = scoring_format == "superflex"
+    val_col = PlayerValue.superflex_value if superflex else PlayerValue.value
+    rank_col = PlayerValue.superflex_rank if superflex else PlayerValue.rank
+
     search_term = f"%{q}%"
     result = await db.execute(
         select(Player)
@@ -250,15 +289,15 @@ async def search_players(
     players = result.scalars().all()
 
     if not players:
-        return {"players": []}
+        return {"players": [], "scoring_format": scoring_format}
 
     player_ids = [p.id for p in players]
     v_result = await db.execute(
-        select(PlayerValue.player_id, PlayerValue.value, PlayerValue.rank).where(
+        select(PlayerValue.player_id, val_col, rank_col).where(
             PlayerValue.player_id.in_(player_ids)
         )
     )
-    values_by_id = {row.player_id: (row.value, row.rank) for row in v_result.all()}
+    values_by_id = {row[0]: (row[1] or 0, row[2]) for row in v_result.all()}
 
     out = []
     for p in players:
@@ -276,12 +315,18 @@ async def search_players(
         })
 
     out.sort(key=lambda x: x["ktc_value"], reverse=True)
-    return {"players": out}
+    return {"players": out, "scoring_format": scoring_format}
 
 
 @router.get("/trade-calculator/pick-values")
-async def get_pick_values(db: AsyncSession = Depends(get_db)):
+async def get_pick_values(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Return all cached draft pick values grouped by year and round."""
+    scoring_format = await _get_league_scoring_format(db, league_id)
+    superflex = scoring_format == "superflex"
+
     result = await db.execute(
         select(PlayerValue)
         .where(PlayerValue.position == "RDP")
@@ -298,28 +343,34 @@ async def get_pick_values(db: AsyncSession = Depends(get_db)):
         if len(parts) != 3:
             continue
         year, round_num, tier = parts
+        value = (pick.superflex_value or pick.value) if superflex else pick.value
+        rank = (pick.superflex_rank or pick.rank) if superflex else pick.rank
         out.append({
             "pick_key": pick.pick_key,
             "ktc_name": pick.ktc_name,
             "year": int(year),
             "round": int(round_num),
-            "tier": tier,          # "early" | "mid" | "late"
-            "value": pick.value,
-            "rank": pick.rank,
+            "tier": tier,
+            "value": value,
+            "rank": rank,
         })
 
-    return {"picks": out}
+    return {"picks": out, "scoring_format": scoring_format}
 
 
 @router.get("/trade-calculator/roster-picks/{user_id}")
-async def get_roster_picks(user_id: str, db: AsyncSession = Depends(get_db)):
+async def get_roster_picks(
+    user_id: str,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Return all draft picks currently owned by a team, with tier and KTC value.
 
     Tier (early/mid/late) is estimated from the original team's current record:
       worst records → earliest draft slots → "early" (highest value)
       best records  → latest draft slots   → "late"  (lowest value)
     """
-    season = await _get_current_season(db)
+    season = await _get_current_season(db, league_id)
     if not season:
         raise HTTPException(status_code=404, detail="No season data found")
 
@@ -414,13 +465,17 @@ async def get_roster_picks(user_id: str, db: AsyncSession = Depends(get_db)):
         num_rounds = 4
 
     # ── 6. Fetch KTC pick values from DB ──────────────────────────────────
+    scoring_format = await _get_league_scoring_format(db, league_id)
+    superflex = scoring_format == "superflex"
     pv_result = await db.execute(
         select(PlayerValue).where(PlayerValue.position == "RDP")
     )
     ktc_picks: dict[str, dict] = {}
     for pv in pv_result.scalars().all():
         if pv.pick_key:
-            ktc_picks[pv.pick_key] = {"value": pv.value, "ktc_name": pv.ktc_name, "rank": pv.rank}
+            value = (pv.superflex_value or pv.value) if superflex else pv.value
+            rank = (pv.superflex_rank or pv.rank) if superflex else pv.rank
+            ktc_picks[pv.pick_key] = {"value": value, "ktc_name": pv.ktc_name, "rank": rank}
 
     # ── 7. Assemble pick list ──────────────────────────────────────────────
     picks_out = []
@@ -458,13 +513,14 @@ async def get_roster_picks(user_id: str, db: AsyncSession = Depends(get_db)):
     # Sort: season asc, round asc, own picks first
     picks_out.sort(key=lambda p: (p["year"], p["round"], 0 if p["own_pick"] else 1))
 
-    return {"roster_id": user_roster_id, "picks": picks_out}
+    return {"roster_id": user_roster_id, "picks": picks_out, "scoring_format": scoring_format}
 
 
 @router.get("/trade-calculator/h2h-trades/{user_id_a}/{user_id_b}")
 async def get_h2h_trade_history(
     user_id_a: str,
     user_id_b: str,
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the trade history between two specific owners, graded."""

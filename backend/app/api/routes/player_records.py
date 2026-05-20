@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import MatchupPlayerPoint, Matchup, Roster, Player, User, Season
 from typing import Optional
 
@@ -10,6 +11,7 @@ router = APIRouter()
 
 @router.get("/player-records")
 async def get_player_records(
+    league_id: str = Depends(get_league_id),
     view: str = Query("game", pattern="^(game|season|career)$"),
     match_type: str = Query("regular", pattern="^(regular|playoff|consolation)$"),
     roster_type: str = Query("all", pattern="^(all|starter|bench)$"),
@@ -20,16 +22,16 @@ async def get_player_records(
     """Get top player scoring records by game, season, or career."""
 
     if view == "game":
-        records = await _get_game_records(db, match_type, roster_type, position, limit)
+        records = await _get_game_records(db, match_type, roster_type, position, limit, league_id)
     elif view == "season":
-        records = await _get_season_records(db, match_type, roster_type, position, limit)
+        records = await _get_season_records(db, match_type, roster_type, position, limit, league_id)
     else:
-        records = await _get_career_records(db, match_type, roster_type, position, limit)
+        records = await _get_career_records(db, match_type, roster_type, position, limit, league_id)
 
     return {"view": view, "match_type": match_type, "roster_type": roster_type, "records": records}
 
 
-async def _get_game_records(db, match_type, roster_type, position, limit):
+async def _get_game_records(db, match_type, roster_type, position, limit, league_id):
     """Top individual game performances."""
     query = (
         select(
@@ -51,7 +53,7 @@ async def _get_game_records(db, match_type, roster_type, position, limit):
         .outerjoin(Player, MatchupPlayerPoint.player_id == Player.id)
         .join(User, Roster.user_id == User.id)
         .join(Season, Matchup.season_id == Season.id)
-        .where(Matchup.match_type == match_type)
+        .where(Matchup.match_type == match_type, Season.group_id == league_id)
     )
 
     query = _apply_filters(query, roster_type, position)
@@ -79,7 +81,7 @@ async def _get_game_records(db, match_type, roster_type, position, limit):
     ]
 
 
-async def _get_season_records(db, match_type, roster_type, position, limit):
+async def _get_season_records(db, match_type, roster_type, position, limit, league_id):
     """Top player season totals."""
     query = (
         select(
@@ -100,7 +102,7 @@ async def _get_season_records(db, match_type, roster_type, position, limit):
         .outerjoin(Player, MatchupPlayerPoint.player_id == Player.id)
         .join(User, Roster.user_id == User.id)
         .join(Season, Matchup.season_id == Season.id)
-        .where(Matchup.match_type == match_type)
+        .where(Matchup.match_type == match_type, Season.group_id == league_id)
     )
 
     query = _apply_filters(query, roster_type, position)
@@ -135,7 +137,7 @@ async def _get_season_records(db, match_type, roster_type, position, limit):
     ]
 
 
-async def _get_career_records(db, match_type, roster_type, position, limit):
+async def _get_career_records(db, match_type, roster_type, position, limit, league_id):
     """Top player career totals."""
     # Subquery to count distinct owners per player
     owner_count_sub = (
@@ -146,7 +148,8 @@ async def _get_career_records(db, match_type, roster_type, position, limit):
         .join(Roster, MatchupPlayerPoint.roster_id == Roster.id)
         .join(User, Roster.user_id == User.id)
         .join(Matchup, MatchupPlayerPoint.matchup_id == Matchup.id)
-        .where(Matchup.match_type == match_type)
+        .join(Season, Matchup.season_id == Season.id)
+        .where(Matchup.match_type == match_type, Season.group_id == league_id)
     )
     owner_count_sub = _apply_filters(owner_count_sub, roster_type, position=None)
     owner_count_sub = owner_count_sub.group_by(MatchupPlayerPoint.player_id).subquery()
@@ -171,7 +174,7 @@ async def _get_career_records(db, match_type, roster_type, position, limit):
         .join(User, Roster.user_id == User.id)
         .join(Season, Matchup.season_id == Season.id)
         .outerjoin(owner_count_sub, MatchupPlayerPoint.player_id == owner_count_sub.c.player_id)
-        .where(Matchup.match_type == match_type)
+        .where(Matchup.match_type == match_type, Season.group_id == league_id)
     )
 
     query = _apply_filters(query, roster_type, position)

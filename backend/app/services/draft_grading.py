@@ -84,8 +84,9 @@ def _value_share_to_grade(share: float) -> str:
 
 
 class DraftGradingService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, league_id: str | None = None):
         self.db = db
+        self.league_id = league_id
 
     # ------------------------------------------------------------------
     # Public API
@@ -130,6 +131,9 @@ class DraftGradingService:
                 player_map,
                 points_index,
             )
+            # Skip drafts with no picks (e.g. placeholder/abandoned drafts in Sleeper)
+            if not g or not g.get("owners"):
+                continue
             # Filter by owner if specified
             if owner_id:
                 # Check if this owner participated in this draft
@@ -188,6 +192,11 @@ class DraftGradingService:
         Rookie drafts = all subsequent drafts (typically 3-5 rounds)
         """
         query = select(Draft).where(Draft.status == "complete")
+
+        if self.league_id is not None:
+            query = query.join(Season, Draft.season_id == Season.id).where(
+                Season.group_id == self.league_id
+            )
 
         # Filter by draft type based on number of rounds:
         # "startup" = 20+ rounds (startup drafts are much larger)
