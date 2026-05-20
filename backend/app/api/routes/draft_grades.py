@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.services.draft_grading import DraftGradingService
 
 router = APIRouter()
@@ -12,6 +13,7 @@ router = APIRouter()
 
 @router.get("/draft-grades")
 async def get_draft_grades(
+    league_id: str = Depends(get_league_id),
     draft_type: Optional[str] = Query(
         None,
         description='Filter by draft type: "startup" or "rookie"',
@@ -29,7 +31,7 @@ async def get_draft_grades(
 
     Returns list of graded drafts with owner performance breakdowns.
     """
-    service = DraftGradingService(db)
+    service = DraftGradingService(db, league_id=league_id)
 
     # Validate draft_type if provided
     if draft_type and draft_type not in ("startup", "rookie"):
@@ -48,10 +50,11 @@ async def get_draft_grades(
 @router.get("/draft-grades/{draft_id}")
 async def get_draft_grade(
     draft_id: str,
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get grade for a specific draft by ID."""
-    service = DraftGradingService(db)
+    service = DraftGradingService(db, league_id=league_id)
     grade = await service.grade_single_draft(draft_id)
     if not grade:
         raise HTTPException(

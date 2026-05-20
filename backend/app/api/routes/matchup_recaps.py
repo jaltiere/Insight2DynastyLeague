@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from typing import Optional, List
 from app.database import get_db
+from app.api.deps import get_league_id, get_league_config
 from app.models.matchup_recap import MatchupRecap
 from app.models.matchup import Matchup
 from app.models.roster import Roster
@@ -22,7 +23,10 @@ settings = get_settings()
 
 
 @router.get("/matchup-recaps/current", response_model=CurrentWeekMatchupsResponse)
-async def get_current_week_matchups(db: AsyncSession = Depends(get_db)):
+async def get_current_week_matchups(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get current week matchups with predictions."""
     # Get current NFL state to determine current week
     from app.services.sleeper_client import SleeperClient
@@ -42,7 +46,9 @@ async def get_current_week_matchups(db: AsyncSession = Depends(get_db)):
 
     # Get current season from database
     result = await db.execute(
-        select(Season).where(Season.year == current_season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == current_season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season = result.scalar_one_or_none()
 
@@ -71,7 +77,10 @@ async def get_current_week_matchups(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/matchup-recaps/previous", response_model=WeekRecapsResponse)
-async def get_previous_week_recaps(db: AsyncSession = Depends(get_db)):
+async def get_previous_week_recaps(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get previous week matchups with recaps."""
     # Get current NFL state
     from app.services.sleeper_client import SleeperClient
@@ -85,7 +94,9 @@ async def get_previous_week_recaps(db: AsyncSession = Depends(get_db)):
     if season_type == "off" or current_week == 0:
         # Get most recent completed season
         result = await db.execute(
-            select(Season).where(Season.year == current_season - 1).order_by(Season.id.desc())
+            select(Season)
+            .where(Season.year == current_season - 1, Season.group_id == league_id)
+            .order_by(Season.id.desc())
         )
         season = result.scalar_one_or_none()
 
@@ -134,7 +145,9 @@ async def get_previous_week_recaps(db: AsyncSession = Depends(get_db)):
 
     # Get current season from database
     result = await db.execute(
-        select(Season).where(Season.year == current_season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == current_season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season = result.scalar_one_or_none()
 
@@ -170,7 +183,8 @@ async def get_previous_week_recaps(db: AsyncSession = Depends(get_db)):
 async def get_week_recaps(
     week: int,
     season: Optional[int] = None,
-    db: AsyncSession = Depends(get_db)
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get recaps for a specific week."""
     # Determine season
@@ -182,7 +196,9 @@ async def get_week_recaps(
 
     # Get season from database
     result = await db.execute(
-        select(Season).where(Season.year == season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season_obj = result.scalar_one_or_none()
 
@@ -218,7 +234,8 @@ async def get_week_recaps(
 async def get_newsletter_recaps(
     week: int,
     season: Optional[int] = None,
-    db: AsyncSession = Depends(get_db)
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get recaps formatted for newsletter inclusion."""
     # Get season
@@ -230,7 +247,9 @@ async def get_newsletter_recaps(
 
     # Get previous week recaps
     previous_week_result = await db.execute(
-        select(Season).where(Season.year == season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season_obj = previous_week_result.scalar_one_or_none()
 
@@ -283,7 +302,9 @@ async def regenerate_recaps(
     season: Optional[int] = None,
     force: bool = Query(False, description="Force regeneration even during offseason"),
     authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db)
+    league_id: str = Depends(get_league_id),
+    league_config: dict = Depends(get_league_config),
+    db: AsyncSession = Depends(get_db),
 ):
     """Admin endpoint to regenerate recaps for a week (requires CRON_SECRET)."""
     # Verify authorization
@@ -293,6 +314,15 @@ async def regenerate_recaps(
     token = authorization.replace("Bearer ", "")
     if token != settings.CRON_SECRET:
         raise HTTPException(status_code=403, detail="Invalid credentials")
+
+    # Block if recaps are disabled for this league
+    if not league_config.get("recaps_enabled", False):
+        return {
+            "status": "skipped",
+            "message": f"Recaps are disabled for this league.",
+            "week": week,
+            "season": season,
+        }
 
     # Get NFL state to check season status
     from app.services.sleeper_client import SleeperClient
@@ -315,7 +345,9 @@ async def regenerate_recaps(
         season = nfl_state.get("season")
 
     result = await db.execute(
-        select(Season).where(Season.year == season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season_obj = result.scalar_one_or_none()
 
@@ -341,7 +373,9 @@ async def regenerate_predictions(
     regenerate: bool = Query(True, description="Force regenerate existing predictions"),
     force: bool = Query(False, description="Force generation even during offseason"),
     authorization: str = Header(None),
-    db: AsyncSession = Depends(get_db)
+    league_id: str = Depends(get_league_id),
+    league_config: dict = Depends(get_league_config),
+    db: AsyncSession = Depends(get_db),
 ):
     """Admin endpoint to regenerate predictions for upcoming week (requires CRON_SECRET)."""
     # Verify authorization
@@ -351,6 +385,15 @@ async def regenerate_predictions(
     token = authorization.replace("Bearer ", "")
     if token != settings.CRON_SECRET:
         raise HTTPException(status_code=403, detail="Invalid credentials")
+
+    # Block if recaps are disabled for this league
+    if not league_config.get("recaps_enabled", False):
+        return {
+            "status": "skipped",
+            "message": f"Recaps are disabled for this league.",
+            "week": week,
+            "season": season,
+        }
 
     # Get NFL state to check season status
     from app.services.sleeper_client import SleeperClient
@@ -373,7 +416,9 @@ async def regenerate_predictions(
         season = nfl_state.get("season")
 
     result = await db.execute(
-        select(Season).where(Season.year == season).order_by(Season.id.desc())
+        select(Season)
+        .where(Season.year == season, Season.group_id == league_id)
+        .order_by(Season.id.desc())
     )
     season_obj = result.scalar_one_or_none()
 

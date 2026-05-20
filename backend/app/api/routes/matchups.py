@@ -4,6 +4,7 @@ from sqlalchemy import select, or_, and_
 from statistics import median as calc_median
 from collections import defaultdict
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import User, Roster, Matchup, Season
 from typing import List, Dict, Any, Optional
 
@@ -12,25 +13,37 @@ router = APIRouter()
 
 @router.get("/matchups/head-to-head-matrix")
 async def get_head_to_head_matrix(
+    league_id: str = Depends(get_league_id),
     match_type: Optional[str] = Query(None, pattern="^(regular|playoff|consolation)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get head-to-head matrix for all active owners with median records."""
-    # 1. Fetch all active users
+    # 1. Users active in this league (have rosters in any of this league's seasons)
     result = await db.execute(
-        select(User).where(User.is_active == True)
+        select(User)
+        .join(Roster, User.id == Roster.user_id)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Season.group_id == league_id, User.is_active == True)
+        .distinct()
     )
     users = result.scalars().all()
     user_map = {u.id: u for u in users}
     active_user_ids = set(user_map.keys())
 
-    # 2. Fetch all rosters, build roster_id -> user_id mapping
-    result = await db.execute(select(Roster))
+    # 2. Fetch rosters scoped to this league
+    result = await db.execute(
+        select(Roster)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Season.group_id == league_id)
+    )
     rosters = result.scalars().all()
     roster_to_user = {r.id: r.user_id for r in rosters}
+    league_roster_ids = {r.id for r in rosters}
 
-    # 3. Fetch matchups (with optional match_type filter)
-    query = select(Matchup)
+    # 3. Fetch matchups scoped to this league (with optional match_type filter)
+    query = select(Matchup).where(Matchup.season_id.in_(
+        select(Season.id).where(Season.group_id == league_id)
+    ))
     if match_type:
         query = query.where(Matchup.match_type == match_type)
     result = await db.execute(query)
@@ -107,9 +120,13 @@ async def get_head_to_head_matrix(
 
 
 @router.get("/matchups/head-to-head/{user_id_1}/{user_id_2}")
-async def get_head_to_head(user_id_1: str, user_id_2: str, db: AsyncSession = Depends(get_db)):
+async def get_head_to_head(
+    user_id_1: str,
+    user_id_2: str,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get head-to-head history between two owners."""
-    # Validate both users exist
     result = await db.execute(
         select(User).where(User.id.in_([user_id_1, user_id_2]))
     )
@@ -121,9 +138,11 @@ async def get_head_to_head(user_id_1: str, user_id_2: str, db: AsyncSession = De
     user1 = next(u for u in users if u.id == user_id_1)
     user2 = next(u for u in users if u.id == user_id_2)
 
-    # Get all rosters for both users
+    # Get rosters for both users scoped to this league
     result = await db.execute(
-        select(Roster).where(Roster.user_id.in_([user_id_1, user_id_2]))
+        select(Roster)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Roster.user_id.in_([user_id_1, user_id_2]), Season.group_id == league_id)
     )
     rosters = result.scalars().all()
 

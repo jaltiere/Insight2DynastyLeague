@@ -1,9 +1,10 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import create_league, create_season, create_user, create_roster, create_matchup
 
 
 async def test_playoffs_no_season(client):
     """Returns 404 when no season exists."""
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 404
     assert "No season data found" in response.json()["detail"]
 
@@ -13,7 +14,7 @@ async def test_playoffs_specific_season_not_found(client, db_session):
     league = await create_league(db_session)
     await create_season(db_session, league, year=2024)
 
-    response = await client.get("/api/playoffs/2020")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs/2020")
     assert response.status_code == 404
     assert "Season 2020 not found" in response.json()["detail"]
 
@@ -27,7 +28,7 @@ async def test_playoffs_season_not_started(client, db_session):
     await create_roster(db_session, season, user1, roster_id=1, wins=0, losses=0)
     await create_roster(db_session, season, user2, roster_id=2, wins=0, losses=0)
 
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 200
     data = response.json()
     assert data["season_started"] is False
@@ -40,7 +41,7 @@ async def test_playoffs_season_not_started_no_rosters(client, db_session):
     league = await create_league(db_session)
     await create_season(db_session, league, year=2024)
 
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 200
     data = response.json()
     assert data["season_started"] is False
@@ -100,7 +101,7 @@ async def test_playoffs_with_active_season(client, db_session):
         winner_roster_id=None,
     )
 
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 200
     data = response.json()
 
@@ -173,7 +174,7 @@ async def test_playoffs_draft_order_present(client, db_session):
         home_max_potential_points=135.0, away_max_potential_points=125.0,
     )
 
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 200
     data = response.json()
 
@@ -216,7 +217,7 @@ async def test_playoffs_historical_season(client, db_session):
         home_max_potential_points=140.0, away_max_potential_points=130.0,
     )
 
-    response = await client.get("/api/playoffs/2023")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs/2023")
     assert response.status_code == 200
     data = response.json()
     assert data["season"] == 2023
@@ -262,7 +263,7 @@ async def test_playoffs_response_percentages_format(client, db_session):
         home_max_potential_points=130.0, away_max_potential_points=110.0,
     )
 
-    response = await client.get("/api/playoffs")
+    response = await client.get(f"{LEAGUE_PREFIX}/playoffs")
     assert response.status_code == 200
     data = response.json()
 

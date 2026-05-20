@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 """Tests for the newsletter endpoint."""
 import pytest
 from httpx import AsyncClient
@@ -70,13 +71,13 @@ async def base_data(db_session):
 
 @pytest.mark.anyio
 async def test_newsletter_returns_200(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     assert resp.status_code == 200
 
 
 @pytest.mark.anyio
 async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
 
     required_keys = [
@@ -90,7 +91,7 @@ async def test_newsletter_response_has_all_fields(client: AsyncClient, base_data
 
 @pytest.mark.anyio
 async def test_newsletter_week_and_season(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     assert data["week"] == 5
     assert data["season"] == 2024
@@ -99,19 +100,19 @@ async def test_newsletter_week_and_season(client: AsyncClient, base_data):
 @pytest.mark.anyio
 async def test_newsletter_is_regular_season_flag(client: AsyncClient, base_data):
     # Week 5 is within regular season (14 weeks), so should be True
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     assert data["is_regular_season"] is True
 
     # Week 15 is beyond regular season (14 weeks), so should be False
-    resp = await client.get("/api/newsletter/15")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/15")
     data = resp.json()
     assert data["is_regular_season"] is False
 
 
 @pytest.mark.anyio
 async def test_newsletter_high_score(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     assert data["high_score"]["points"] == 154.4
     assert data["high_score"]["team_name"] == "Alice's Team"
@@ -119,7 +120,7 @@ async def test_newsletter_high_score(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_low_score(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     assert data["low_score"]["points"] == 99.0
     assert data["low_score"]["team_name"] == "Bob's Team"
@@ -127,7 +128,7 @@ async def test_newsletter_low_score(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_league_median(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     median_data = data["league_median"]
     assert "median" in median_data
@@ -144,7 +145,7 @@ async def test_newsletter_league_median(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_top_players_has_positions(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     top = data["top_players"]
     assert "QB" in top
@@ -156,7 +157,7 @@ async def test_newsletter_top_players_has_positions(client: AsyncClient, base_da
 
 @pytest.mark.anyio
 async def test_newsletter_season_leaders(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     leaders = data["season_leaders"]
     assert "QB" in leaders
@@ -169,7 +170,7 @@ async def test_newsletter_season_leaders(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_rookie_report(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     report = data["rookie_report"]
     assert "RB" in report
@@ -181,7 +182,7 @@ async def test_newsletter_rookie_report(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_playoff_picture(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     picture = data["playoff_picture"]
     assert "playoff" in picture
@@ -193,8 +194,8 @@ async def test_newsletter_playoff_picture(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_playoff_odds_regular_season(client: AsyncClient, base_data):
-    # Week 5 is regular season — playoff_odds should be a list (possibly empty if no played matchups)
-    resp = await client.get("/api/newsletter/5")
+    # Week 5 is regular season â€” playoff_odds should be a list (possibly empty if no played matchups)
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     # playoff_odds is a list during regular season (simulation ran), None otherwise
     assert data["playoff_odds"] is None or isinstance(data["playoff_odds"], list)
@@ -202,15 +203,15 @@ async def test_newsletter_playoff_odds_regular_season(client: AsyncClient, base_
 
 @pytest.mark.anyio
 async def test_newsletter_playoff_odds_null_in_playoffs(client: AsyncClient, base_data):
-    # Week 15 is beyond regular season — playoff_odds should be None
-    resp = await client.get("/api/newsletter/15")
+    # Week 15 is beyond regular season â€” playoff_odds should be None
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/15")
     data = resp.json()
     assert data["playoff_odds"] is None
 
 
 @pytest.mark.anyio
 async def test_newsletter_standings(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     standings = data["standings"]
     assert len(standings) == 2
@@ -226,7 +227,7 @@ async def test_newsletter_standings(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_potential_points(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     pp = data["potential_points"]
     assert len(pp) == 2
@@ -238,7 +239,7 @@ async def test_newsletter_potential_points(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_season_query_param(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5?season=2024")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5?season=2024")
     assert resp.status_code == 200
     data = resp.json()
     assert data["season"] == 2024
@@ -246,14 +247,14 @@ async def test_newsletter_season_query_param(client: AsyncClient, base_data):
 
 @pytest.mark.anyio
 async def test_newsletter_404_for_bad_season(client: AsyncClient, base_data):
-    resp = await client.get("/api/newsletter/5?season=1999")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5?season=1999")
     assert resp.status_code == 404
 
 
 @pytest.mark.anyio
 async def test_newsletter_empty_recaps(client: AsyncClient, base_data):
     """Recaps array should be empty when no recaps are stored."""
-    resp = await client.get("/api/newsletter/5")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/5")
     data = resp.json()
     assert data["recaps"] == []
     assert data["upcoming_matchups"] == []
@@ -283,7 +284,7 @@ async def test_rookie_report_excludes_zero_point_rookies(client: AsyncClient, db
     await create_matchup_player_point(db_session, matchup, roster2, zero_rookie, points=0.0, is_starter=True)
     await db_session.commit()
 
-    resp = await client.get("/api/newsletter/3")
+    resp = await client.get(f"{LEAGUE_PREFIX}/newsletter/3")
     data = resp.json()
     rb_rookies = data["rookie_report"]["RB"]
     names = [r["player_name"] for r in rb_rookies]

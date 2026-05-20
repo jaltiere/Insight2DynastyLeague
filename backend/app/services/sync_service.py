@@ -16,9 +16,13 @@ logger = logging.getLogger(__name__)
 class SyncService:
     """Service to sync data from Sleeper API to database."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, league_id: str | None = None, recaps_enabled: bool = True):
         self.db = db
         self.client = sleeper_client
+        self.recaps_enabled = recaps_enabled
+        # Store the target league_id; passed explicitly to client methods so the
+        # module-level client reference stays mockable in tests.
+        self._league_id = league_id
 
     @staticmethod
     def _safe_int(value):
@@ -35,7 +39,7 @@ class SyncService:
         try:
             # Walk the chain to collect all league IDs
             league_chain = []
-            current_id = self.client.league_id
+            current_id = self._league_id or self.client.league_id
             while current_id:
                 league_data = await self.client.get_league(current_id)
                 league_chain.append((current_id, league_data))
@@ -65,12 +69,13 @@ class SyncService:
                 users_data = await self.client.get_users(league_id)
                 await self._sync_users(users_data)
 
-                # Sync season metadata
-                await self._sync_season(league_data, year)
+                # Sync season metadata (group_id = canonical starting ID for chain)
+                canonical_id = self._league_id or self.client.league_id
+                await self._sync_season(league_data, year, group_id=canonical_id)
 
                 # Sync rosters
                 rosters_data = await self.client.get_rosters(league_id)
-                await self._sync_rosters(rosters_data, year, users_data)
+                await self._sync_rosters(rosters_data, year, users_data, league_id=league_id)
 
                 # Flush to ensure rosters are visible for matchup/awards sync
                 await self.db.flush()
@@ -98,7 +103,7 @@ class SyncService:
 
                 # Sync drafts
                 drafts_data = await self.client.get_drafts(league_id)
-                await self._sync_drafts(drafts_data, year)
+                await self._sync_drafts(drafts_data, year, league_id=league_id)
 
                 # Sync season awards from bracket data (completed seasons only)
                 if status == "complete":
@@ -140,19 +145,19 @@ class SyncService:
             current_season = nfl_state.get("season")
 
             # Sync league info
-            league_data = await self.client.get_league()
+            league_data = await self.client.get_league(self._league_id)
             await self._sync_league_data(league_data)
 
             # Sync users
-            users_data = await self.client.get_users()
+            users_data = await self.client.get_users(self._league_id)
             await self._sync_users(users_data)
 
-            # Sync current season
-            await self._sync_season(league_data, current_season)
+            # Sync current season (group_id = canonical ID for this league group)
+            await self._sync_season(league_data, current_season, group_id=self._league_id)
 
             # Sync rosters (pass users_data for team names from user metadata)
-            rosters_data = await self.client.get_rosters()
-            await self._sync_rosters(rosters_data, current_season, users_data)
+            rosters_data = await self.client.get_rosters(self._league_id)
+            await self._sync_rosters(rosters_data, current_season, users_data, league_id=self._league_id)
 
             # Determine weeks to sync based on season status
             current_week = nfl_state.get("week", 1)
@@ -168,10 +173,10 @@ class SyncService:
                 weeks_to_sync = current_week
 
             # Sync matchups for all weeks
-            await self._sync_matchups_for_league(current_season, weeks_to_sync)
+            await self._sync_matchups_for_league(current_season, weeks_to_sync, self._league_id)
 
-            # Generate matchup recaps and predictions (week 2+)
-            if current_week >= 2 and season_type in ("regular", "post"):
+            # Generate matchup recaps and predictions (week 2+, only if enabled for this league)
+            if self.recaps_enabled and current_week >= 2 and season_type in ("regular", "post"):
                 from app.services.matchup_recap_service import MatchupRecapService
                 from app.config import get_settings
 
@@ -179,9 +184,10 @@ class SyncService:
 
                 # Get season object from database
                 from app.models.season import Season
-                season_result = await self.db.execute(
-                    select(Season).where(Season.year == current_season).order_by(Season.id.desc())
-                )
+                _season_q = select(Season).where(Season.year == current_season)
+                if self._league_id:
+                    _season_q = _season_q.where(Season.group_id == self._league_id)
+                season_result = await self.db.execute(_season_q.order_by(Season.id.desc()))
                 season_obj = season_result.scalar_one_or_none()
 
                 if season_obj:
@@ -199,7 +205,7 @@ class SyncService:
                             from app.api.routes.power_rankings import _save_snapshot
                             completed_week = current_week - 1
                             logger.info(f"Tuesday sync: saving power ranking snapshot for week {completed_week}")
-                            await _save_snapshot(self.db, int(current_season), completed_week)
+                            await _save_snapshot(self.db, int(current_season), completed_week, league_id=self._league_id)
                         except Exception as snap_err:
                             logger.warning(f"Power ranking snapshot failed (non-fatal): {snap_err}")
 
@@ -214,9 +220,12 @@ class SyncService:
                 else:
                     logger.warning(f"Season object not found for year {current_season}, skipping recap generation")
 
+            # Sync players FIRST (before drafts that reference them by FK)
+            await self._sync_players(int(current_season))
+
             # Sync drafts
-            drafts_data = await self.client.get_drafts()
-            await self._sync_drafts(drafts_data, current_season)
+            drafts_data = await self.client.get_drafts(self._league_id)
+            await self._sync_drafts(drafts_data, current_season, league_id=self._league_id)
 
             # Flush to ensure rosters are visible for awards sync
             await self.db.flush()
@@ -234,15 +243,12 @@ class SyncService:
                 weeks_to_sync
             )
 
-            # Sync players (this is a large dataset)
-            await self._sync_players(int(current_season))
-
             # Refresh KTC dynasty values (player and pick values for trade calculator)
             try:
                 from app.services.ktc_service import refresh_ktc_values
                 from app.config import get_settings
                 _settings = get_settings()
-                ktc_result = await refresh_ktc_values(self.db, scoring_format=_settings.KTC_SCORING_FORMAT)
+                ktc_result = await refresh_ktc_values(self.db)
                 logger.info(f"KTC value refresh: {ktc_result}")
             except Exception as ktc_err:
                 logger.warning(f"KTC value refresh failed (non-fatal): {ktc_err}")
@@ -321,8 +327,14 @@ class SyncService:
 
         logger.info(f"Synced {len(users_data)} users")
 
-    async def _sync_season(self, league_data: Dict[str, Any], year: int):
-        """Sync season metadata."""
+    async def _sync_season(self, league_data: Dict[str, Any], year: int,
+                           group_id: str | None = None):
+        """Sync season metadata.
+
+        group_id is the stable canonical league ID (current-year Sleeper ID from
+        leagues.json) shared by all seasons in the same dynasty chain. Routes
+        filter by group_id; sync internals use the per-year league_id.
+        """
         league_id = league_data.get("league_id")
         settings = league_data.get("settings", {})
 
@@ -339,9 +351,12 @@ class SyncService:
             season.playoff_structure = settings.get("playoff_structure", {})
             season.regular_season_weeks = settings.get("playoff_week_start", 14) - 1
             season.playoff_weeks = settings.get("playoff_rounds", 3)
+            if group_id:
+                season.group_id = group_id
         else:
             season = Season(
                 league_id=league_id,
+                group_id=group_id,
                 year=year,
                 num_divisions=settings.get("divisions", 2),
                 playoff_structure=settings.get("playoff_structure", {}),
@@ -354,12 +369,14 @@ class SyncService:
         logger.info(f"Synced season {year}")
 
     async def _sync_rosters(self, rosters_data: List[Dict[str, Any]], year: int,
-                            users_data: List[Dict[str, Any]] = None):
+                            users_data: List[Dict[str, Any]] = None,
+                            league_id: str = None):
         """Sync team rosters."""
-        # Get season
-        result = await self.db.execute(
-            select(Season).where(Season.year == year)
-        )
+        # Get season — filter by league_id when available to avoid multiple-rows error
+        _q = select(Season).where(Season.year == year)
+        if league_id:
+            _q = _q.where(Season.league_id == league_id)
+        result = await self.db.execute(_q)
         season = result.scalar_one_or_none()
         if not season:
             logger.error(f"Season {year} not found")
@@ -428,9 +445,10 @@ class SyncService:
     async def _sync_matchups_for_league(self, year: int, through_week: int,
                                          league_id: str = None):
         """Sync matchups for all weeks up to through_week, including playoffs."""
-        result = await self.db.execute(
-            select(Season).where(Season.year == year)
-        )
+        _q = select(Season).where(Season.year == year)
+        if league_id:
+            _q = _q.where(Season.league_id == league_id)
+        result = await self.db.execute(_q)
         season = result.scalar_one_or_none()
         if not season:
             return
@@ -669,12 +687,14 @@ class SyncService:
 
         return optimizer.calculate_optimal_lineup(player_points)
 
-    async def _sync_drafts(self, drafts_data: List[Dict[str, Any]], year: int):
+    async def _sync_drafts(self, drafts_data: List[Dict[str, Any]], year: int,
+                           league_id: str = None):
         """Sync draft data."""
-        # Get season
-        result = await self.db.execute(
-            select(Season).where(Season.year == year)
-        )
+        # Get season — filter by league_id when available to avoid multiple-rows error
+        _q = select(Season).where(Season.year == year)
+        if league_id:
+            _q = _q.where(Season.league_id == league_id)
+        result = await self.db.execute(_q)
         season = result.scalar_one_or_none()
         if not season:
             return
@@ -814,9 +834,9 @@ class SyncService:
 
     async def _sync_season_awards(self, league_id: str, year: int):
         """Sync season awards (champion, division winners, consolation) from bracket data."""
-        # Get season
+        # Get season — filter by league_id to avoid multiple-rows error across leagues
         result = await self.db.execute(
-            select(Season).where(Season.year == year)
+            select(Season).where(Season.year == year, Season.league_id == league_id)
         )
         season = result.scalar_one_or_none()
         if not season:
@@ -945,7 +965,7 @@ class SyncService:
     async def _sync_transactions(self, league_id: str, year: int, through_week: int):
         """Sync transactions for a season."""
         result = await self.db.execute(
-            select(Season).where(Season.year == year)
+            select(Season).where(Season.year == year, Season.league_id == league_id)
         )
         season = result.scalar_one_or_none()
         if not season:

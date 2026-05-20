@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from app.models import PlayerValue
 from tests.conftest import create_league, create_user, create_season, create_roster, create_player
@@ -21,7 +22,7 @@ async def test_free_agents_excludes_rostered_players(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, players=["p1"])
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     assert resp.status_code == 200
     data = resp.json()
 
@@ -42,7 +43,7 @@ async def test_free_agents_excludes_taxi_and_reserve(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, taxi=["p1"], reserve=["p2"])
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     data = resp.json()
 
     ids = [p["player_id"] for p in data["players"]]
@@ -64,7 +65,7 @@ async def test_free_agents_sorted_by_ktc_value(client, db_session):
     await _create_player_value(db_session, "p2", value=9000, rank=5)
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     data = resp.json()
 
     players = data["players"]
@@ -83,7 +84,7 @@ async def test_free_agents_position_filter(client, db_session):
     await create_player(db_session, id="p2", full_name="WR Player", position="WR", team="KC", status="Active")
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents", params={"position": "QB"})
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents", params={"position": "QB"})
     data = resp.json()
 
     assert all(p["position"] == "QB" for p in data["players"])
@@ -102,7 +103,7 @@ async def test_free_agents_search_filter(client, db_session):
     await create_player(db_session, id="p2", full_name="Stefon Diggs", first_name="Stefon", last_name="Diggs", position="WR", team="HOU", status="Active")
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents", params={"search": "Tyreek"})
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents", params={"search": "Tyreek"})
     data = resp.json()
 
     assert data["total"] == 1
@@ -120,7 +121,7 @@ async def test_free_agents_excludes_inactive_players(client, db_session):
     await create_player(db_session, id="p2", full_name="Inactive Player", position="RB", team="FA", status="Inactive")
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     data = resp.json()
 
     ids = [p["player_id"] for p in data["players"]]
@@ -139,7 +140,7 @@ async def test_free_agents_response_has_all_fields(client, db_session):
     await _create_player_value(db_session, "p1", value=8500, rank=12)
     await db_session.commit()
 
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     assert resp.status_code == 200
     data = resp.json()
 
@@ -160,7 +161,7 @@ async def test_free_agents_response_has_all_fields(client, db_session):
 @pytest.mark.asyncio
 async def test_free_agents_empty_when_no_season(client, db_session):
     """Returns empty list when no season exists."""
-    resp = await client.get("/api/free-agents")
+    resp = await client.get(f"{LEAGUE_PREFIX}/free-agents")
     data = resp.json()
 
     assert data["season"] is None

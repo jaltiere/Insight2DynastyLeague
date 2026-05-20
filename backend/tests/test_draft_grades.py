@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league,
     create_season,
@@ -90,7 +91,7 @@ async def _add_player_points(
 
 async def test_draft_grades_empty(client):
     """No drafts should return an empty list."""
-    response = await client.get("/api/draft-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
     assert response.status_code == 200
     assert response.json()["drafts"] == []
 
@@ -148,7 +149,7 @@ async def test_draft_grades_basic_draft(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/draft-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -223,7 +224,7 @@ async def test_draft_grades_filter_by_type(client, db_session):
     await db_session.flush()
 
     # Test filter by startup (20+ rounds)
-    response = await client.get("/api/draft-grades?draft_type=startup")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=startup")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -231,7 +232,7 @@ async def test_draft_grades_filter_by_type(client, db_session):
     assert data["drafts"][0]["rounds"] == 25
 
     # Test filter by rookie (<20 rounds)
-    response = await client.get("/api/draft-grades?draft_type=rookie")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=rookie")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -239,7 +240,7 @@ async def test_draft_grades_filter_by_type(client, db_session):
     assert data["drafts"][0]["rounds"] == 3
 
     # Test no filter (all drafts)
-    response = await client.get("/api/draft-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 2
@@ -264,7 +265,7 @@ async def test_draft_grades_filter_by_owner(client, db_session):
     await db_session.flush()
 
     # Filter by user1
-    response = await client.get("/api/draft-grades?owner_id=user1")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?owner_id=user1")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -305,7 +306,7 @@ async def test_draft_grades_bench_weighting(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/draft-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
     data = response.json()
     draft_result = data["drafts"][0]
 
@@ -330,7 +331,7 @@ async def test_draft_grades_single_draft_endpoint(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get(f"/api/draft-grades/{draft.id}")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades/{draft.id}")
     assert response.status_code == 200
     data = response.json()
     assert data["draft_id"] == draft.id
@@ -339,7 +340,7 @@ async def test_draft_grades_single_draft_endpoint(client, db_session):
 
 async def test_draft_grades_single_draft_not_found(client):
     """Should return 404 for non-existent draft."""
-    response = await client.get("/api/draft-grades/nonexistent")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades/nonexistent")
     assert response.status_code == 404
 
 
@@ -359,7 +360,7 @@ async def test_draft_grades_response_has_all_fields(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/draft-grades")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
     data = response.json()
     draft_result = data["drafts"][0]
 
@@ -446,7 +447,7 @@ async def test_rookie_draft_round_multiplier(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/draft-grades?draft_type=rookie")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=rookie")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -517,7 +518,7 @@ async def test_startup_draft_no_round_multiplier(client, db_session):
 
     await db_session.flush()
 
-    response = await client.get("/api/draft-grades?draft_type=startup")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=startup")
     assert response.status_code == 200
     data = response.json()
     assert len(data["drafts"]) == 1
@@ -525,3 +526,31 @@ async def test_startup_draft_no_round_multiplier(client, db_session):
     for owner in data["drafts"][0]["owners"]:
         for pick in owner["picks"]:
             assert pick["round_multiplier"] == 1.0
+
+
+async def test_draft_grades_skips_empty_draft(client, db_session):
+    """Phantom/abandoned drafts with no picks (status=complete, 0 picks) must not appear."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+
+    # Real draft with picks
+    real_draft = await create_draft(
+        db_session, season, id="real_draft", year=2024, status="complete", rounds=3,
+    )
+    user = await create_user(db_session, id="u1", display_name="Alice")
+    roster = await create_roster(db_session, season, user, roster_id=1)
+    player = await create_player(db_session, id="p1", full_name="CeeDee Lamb", position="WR", team="DAL")
+    await create_draft_pick(db_session, real_draft, pick_no=1, round=1, pick_in_round=1, roster_id=1, player_id=player.id)
+
+    # Phantom draft — same year, status=complete, no picks
+    await create_draft(
+        db_session, season, id="phantom_draft", year=2024, status="complete", rounds=3,
+    )
+    await db_session.flush()
+
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades")
+    assert response.status_code == 200
+    data = response.json()
+    # Only the real draft with picks should appear
+    assert data["total"] == 1
+    assert data["drafts"][0]["draft_id"] == "real_draft"

@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from app.database import get_db
-from app.models import Player, User, Draft
+from app.api.deps import get_league_id
+from app.models import Player, User, Draft, Roster, Season
 from typing import List, Dict, Any
 
 router = APIRouter()
@@ -14,6 +15,7 @@ MIN_QUERY_LENGTH = 2
 @router.get("/search")
 async def global_search(
     q: str = Query(..., min_length=MIN_QUERY_LENGTH, description="Search query"),
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Search across players, owners, and drafts."""
@@ -21,8 +23,8 @@ async def global_search(
 
     # Run sequentially — AsyncSession is not safe for concurrent use
     players = await _search_players(db, term)
-    owners = await _search_owners(db, term)
-    drafts = await _search_drafts(db, q.strip())
+    owners = await _search_owners(db, term, league_id)
+    drafts = await _search_drafts(db, q.strip(), league_id)
 
     return {
         "query": q.strip(),
@@ -55,15 +57,19 @@ async def _search_players(db: AsyncSession, term: str) -> List[Dict[str, Any]]:
     ]
 
 
-async def _search_owners(db: AsyncSession, term: str) -> List[Dict[str, Any]]:
+async def _search_owners(db: AsyncSession, term: str, league_id: str) -> List[Dict[str, Any]]:
     result = await db.execute(
         select(User)
+        .join(Roster, Roster.user_id == User.id)
+        .join(Season, Roster.season_id == Season.id)
         .where(
+            Season.group_id == league_id,
             or_(
                 User.display_name.ilike(term),
                 User.username.ilike(term),
-            )
+            ),
         )
+        .distinct()
         .order_by(User.display_name)
         .limit(MAX_PER_TYPE)
     )
@@ -80,12 +86,18 @@ async def _search_owners(db: AsyncSession, term: str) -> List[Dict[str, Any]]:
     ]
 
 
-async def _search_drafts(db: AsyncSession, q: str) -> List[Dict[str, Any]]:
+async def _search_drafts(db: AsyncSession, q: str, league_id: str) -> List[Dict[str, Any]]:
     # Only match drafts when the query looks like a year or "draft"
     if not (q.isdigit() or "draft" in q.lower()):
         return []
 
-    query = select(Draft).order_by(Draft.year.desc()).limit(MAX_PER_TYPE)
+    query = (
+        select(Draft)
+        .join(Season, Draft.season_id == Season.id)
+        .where(Season.group_id == league_id)
+        .order_by(Draft.year.desc())
+        .limit(MAX_PER_TYPE)
+    )
     if q.isdigit():
         query = query.where(Draft.year == int(q))
 

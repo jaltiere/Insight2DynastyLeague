@@ -16,9 +16,10 @@ async def get_newsletter_data(
     db: AsyncSession,
     week: int,
     season_year: int | None = None,
+    league_id: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate all data needed to render the weekly newsletter."""
-    season = await _get_season(db, season_year)
+    season = await _get_season(db, season_year, league_id)
 
     rosters_map = await _build_rosters_map(db, season.id)
 
@@ -37,7 +38,7 @@ async def get_newsletter_data(
 
     playoff_odds_data = None
     if is_regular_season:
-        odds_result = await calculate_playoff_odds(db, season.year)
+        odds_result = await calculate_playoff_odds(db, season.year, league_id=league_id)
         if odds_result and odds_result.get("season_started"):
             playoff_odds_data = odds_result["playoff_odds"]
 
@@ -64,15 +65,19 @@ async def get_newsletter_data(
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _get_season(db: AsyncSession, season_year: int | None) -> Season:
+async def _get_season(db: AsyncSession, season_year: int | None, league_id: str | None = None) -> Season:
     from fastapi import HTTPException
     from sqlalchemy import desc as _desc
 
+    query = select(Season)
+    if league_id:
+        query = query.where(Season.group_id == league_id)
     if season_year:
-        result = await db.execute(select(Season).where(Season.year == season_year))
+        query = query.where(Season.year == season_year)
     else:
-        result = await db.execute(select(Season).order_by(_desc(Season.year)).limit(1))
+        query = query.order_by(_desc(Season.year)).limit(1)
 
+    result = await db.execute(query)
     season = result.scalar_one_or_none()
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")

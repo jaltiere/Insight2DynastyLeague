@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import SeasonAward, Season, User, League, Roster
 from typing import List, Dict, Any
 
@@ -9,18 +10,20 @@ router = APIRouter()
 
 
 @router.get("/league-history")
-async def get_all_history(db: AsyncSession = Depends(get_db)):
+async def get_all_history(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get all season winners (champion, division winners, consolation)."""
-    # Get all seasons ordered by year descending
     result = await db.execute(
-        select(Season).order_by(desc(Season.year))
+        select(Season).where(Season.group_id == league_id).order_by(desc(Season.year))
     )
     seasons = result.scalars().all()
 
     history = []
     for season in seasons:
-        season_data = await _get_season_awards(db, season.year)
-        if season_data:  # Only include seasons with award data
+        season_data = await _get_season_awards(db, season.year, league_id)
+        if season_data:
             history.append(season_data)
 
     return {
@@ -30,9 +33,13 @@ async def get_all_history(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/league-history/{year}")
-async def get_season_history(year: int, db: AsyncSession = Depends(get_db)):
+async def get_season_history(
+    year: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get specific season winners."""
-    season_data = await _get_season_awards(db, year)
+    season_data = await _get_season_awards(db, year, league_id)
 
     if not season_data:
         raise HTTPException(status_code=404, detail=f"No history found for season {year}")
@@ -40,11 +47,10 @@ async def get_season_history(year: int, db: AsyncSession = Depends(get_db)):
     return season_data
 
 
-async def _get_season_awards(db: AsyncSession, year: int) -> Dict[str, Any]:
+async def _get_season_awards(db: AsyncSession, year: int, league_id: str) -> Dict[str, Any]:
     """Helper function to get all awards for a specific season."""
-    # Get season
     result = await db.execute(
-        select(Season).where(Season.year == year)
+        select(Season).where(Season.group_id == league_id, Season.year == year)
     )
     season = result.scalar_one_or_none()
 

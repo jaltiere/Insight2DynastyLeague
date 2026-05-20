@@ -10,11 +10,26 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from httpx import AsyncClient, ASGITransport
 
 from app.database import Base, get_db
+from app.api.deps import get_league_id, get_league_config
 from app.main import app
 from app.models import (
     League, User, Season, Roster, Matchup, Player,
     Draft, DraftPick, SeasonAward, MatchupPlayerPoint, Transaction,
 )
+
+# League prefix used by all league-scoped test endpoints
+LEAGUE_SLUG = "insight2dynasty"
+LEAGUE_PREFIX = f"/api/{LEAGUE_SLUG}"
+
+# Test league ID matches the "test_league_001" used by create_league factory
+_TEST_LEAGUE_ID = "test_league_001"
+_TEST_LEAGUE_CONFIG = {
+    "id": _TEST_LEAGUE_ID,
+    "slug": LEAGUE_SLUG,
+    "name": "Test League",
+    "default": True,
+    "recaps_enabled": True,
+}
 
 
 @pytest.fixture(scope="session")
@@ -59,7 +74,15 @@ async def client(db_session) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db():
         yield db_session
 
+    def override_get_league_id():
+        return _TEST_LEAGUE_ID
+
+    def override_get_league_config():
+        return _TEST_LEAGUE_CONFIG
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_league_id] = override_get_league_id
+    app.dependency_overrides[get_league_config] = override_get_league_config
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -108,6 +131,7 @@ async def create_user(db: AsyncSession, **overrides) -> User:
 async def create_season(db: AsyncSession, league: League, **overrides) -> Season:
     defaults = {
         "league_id": league.id,
+        "group_id": league.id,  # canonical ID — matches what routes filter on
         "year": 2024,
         "num_divisions": 2,
         "playoff_structure": {},

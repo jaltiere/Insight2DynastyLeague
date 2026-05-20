@@ -4,6 +4,7 @@ from sqlalchemy import select, desc, func
 from statistics import stdev as calc_stdev
 from typing import List, Dict, Any, Tuple, Optional
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Season, Roster, User, Player, Matchup, SeasonAward, MatchupPlayerPoint
 from app.models.player_value import PlayerValue
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
@@ -21,23 +22,30 @@ router = APIRouter()
 
 
 @router.get("/power-rankings", response_model=PowerRankingsResponse)
-async def get_current_power_rankings(db: AsyncSession = Depends(get_db)):
+async def get_current_power_rankings(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get power rankings for current season, with rank change vs. last snapshot."""
-    result = await db.execute(select(Season).order_by(desc(Season.year)).limit(1))
+    result = await db.execute(
+        select(Season).where(Season.group_id == league_id).order_by(desc(Season.year)).limit(1)
+    )
     season = result.scalar_one_or_none()
 
     if not season:
         raise HTTPException(status_code=404, detail="No season data found")
 
-    return await _get_season_power_rankings(db, season.year)
+    return await _get_season_power_rankings(db, season.year, league_id)
 
 
 @router.get("/power-rankings/{season_year}", response_model=PowerRankingsResponse)
 async def get_historical_power_rankings(
-    season_year: int, db: AsyncSession = Depends(get_db)
+    season_year: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get power rankings for a specific season, with rank change vs. last snapshot."""
-    return await _get_season_power_rankings(db, season_year)
+    return await _get_season_power_rankings(db, season_year, league_id)
 
 
 @router.get(
@@ -45,10 +53,15 @@ async def get_historical_power_rankings(
     response_model=RosterBreakdown,
 )
 async def get_roster_breakdown(
-    season_year: int, roster_id: int, db: AsyncSession = Depends(get_db)
+    season_year: int,
+    roster_id: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get detailed roster breakdown with individual player power scores."""
-    result = await db.execute(select(Season).where(Season.year == season_year))
+    result = await db.execute(
+        select(Season).where(Season.year == season_year, Season.group_id == league_id)
+    )
     season = result.scalar_one_or_none()
 
     if not season:
@@ -119,7 +132,9 @@ async def get_roster_breakdown(
 
 @router.get("/power-rankings/{season_year}/trends", response_model=PowerRankingTrendsResponse)
 async def get_power_rankings_trends(
-    season_year: int, db: AsyncSession = Depends(get_db)
+    season_year: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Return weekly rank snapshots for all teams for the season line chart."""
     # Non-fatal: if table doesn't exist yet (migration pending), return empty
@@ -143,7 +158,9 @@ async def get_power_rankings_trends(
         roster_snapshots.setdefault(s.roster_id, []).append(s)
 
     # Get current display names/team names from most recent rosters
-    result = await db.execute(select(Season).where(Season.year == season_year))
+    result = await db.execute(
+        select(Season).where(Season.year == season_year, Season.group_id == league_id)
+    )
     season = result.scalar_one_or_none()
 
     roster_names: Dict[int, Tuple[str, Optional[str]]] = {}
@@ -195,6 +212,7 @@ async def save_power_rankings_snapshot(
     season_year: int,
     week: int,
     authorization: str = Header(...),
+    league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Save a power rankings snapshot for the given week. Requires CRON_SECRET auth."""
@@ -204,7 +222,7 @@ async def save_power_rankings_snapshot(
     if not settings.CRON_SECRET or authorization != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    saved = await _save_snapshot(db, season_year, week)
+    saved = await _save_snapshot(db, season_year, week, league_id=league_id)
     await db.commit()
     return {"status": "ok", "week": week, "season_year": season_year, "teams_saved": saved}
 
@@ -213,10 +231,12 @@ async def save_power_rankings_snapshot(
 
 
 async def _get_season_power_rankings(
-    db: AsyncSession, year: int
+    db: AsyncSession, year: int, league_id: str
 ) -> PowerRankingsResponse:
     """Helper function to calculate power rankings for a specific season."""
-    result = await db.execute(select(Season).where(Season.year == year))
+    result = await db.execute(
+        select(Season).where(Season.year == year, Season.group_id == league_id)
+    )
     season = result.scalar_one_or_none()
 
     if not season:
@@ -317,12 +337,12 @@ async def _get_prior_snapshot_ranks(db: AsyncSession, season_year: int) -> Dict[
     return {s.roster_id: s.rank for s in snapshots}
 
 
-async def _save_snapshot(db: AsyncSession, season_year: int, week: int) -> int:
+async def _save_snapshot(db: AsyncSession, season_year: int, week: int, league_id: str | None = None) -> int:
     """
     Calculate current power rankings and upsert a snapshot row for each team.
     Returns the number of teams saved.
     """
-    rankings_response = await _get_season_power_rankings(db, season_year)
+    rankings_response = await _get_season_power_rankings(db, season_year, league_id=league_id)
 
     for team in rankings_response.rankings:
         # Try to find an existing row for this (season_year, week, roster_id)

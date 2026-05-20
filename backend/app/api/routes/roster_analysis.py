@@ -4,6 +4,7 @@ from sqlalchemy import select, desc
 from statistics import median
 
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Roster, Season, User, Player
 from app.api.routes.power_rankings import (
     _calculate_player_stats,
@@ -40,11 +41,18 @@ def _classify_team(avg_age: float, total_score: float, median_score: float) -> s
 
 
 @router.get("/roster-analysis")
-async def get_roster_analysis(db: AsyncSession = Depends(get_db)):
+async def get_roster_analysis(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get full roster analysis for all teams in the current season."""
 
-    # Get the latest season
-    result = await db.execute(select(Season).order_by(desc(Season.year)).limit(1))
+    result = await db.execute(
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
+    )
     season = result.scalar_one_or_none()
     if not season:
         return {"season": None, "teams": []}

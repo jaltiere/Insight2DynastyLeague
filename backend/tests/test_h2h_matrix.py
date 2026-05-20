@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league, create_season, create_user, create_roster, create_matchup,
 )
@@ -22,7 +23,7 @@ async def test_h2h_matrix_basic(client, db_session):
     # u3 beats u1 once
     await create_matchup(db_session, season, r3, r1, week=3, matchup_id=4, home_points=130.0, away_points=100.0)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
 
@@ -56,14 +57,14 @@ async def test_h2h_matrix_filter_by_match_type(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=15, matchup_id=2, home_points=90.0, away_points=110.0, match_type="playoff")
 
     # Filter regular only
-    response = await client.get("/api/matchups/head-to-head-matrix?match_type=regular")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix?match_type=regular")
     assert response.status_code == 200
     data = response.json()
     assert data["matrix"]["u1"]["u2"]["wins"] == 1
     assert data["matrix"]["u1"]["u2"]["losses"] == 0
 
     # Filter playoff only
-    response = await client.get("/api/matchups/head-to-head-matrix?match_type=playoff")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix?match_type=playoff")
     data = response.json()
     assert data["matrix"]["u1"]["u2"]["wins"] == 0
     assert data["matrix"]["u1"]["u2"]["losses"] == 1
@@ -82,7 +83,7 @@ async def test_h2h_matrix_no_filter_returns_all(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=15, matchup_id=2, home_points=130.0, away_points=110.0, match_type="playoff")
     await create_matchup(db_session, season, r1, r2, week=15, matchup_id=3, home_points=90.0, away_points=110.0, match_type="consolation")
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
     # u1: 2 wins (regular + playoff), 1 loss (consolation)
@@ -108,7 +109,7 @@ async def test_h2h_matrix_median_records(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1, home_points=80.0, away_points=90.0)
     await create_matchup(db_session, season, r3, r4, week=1, matchup_id=2, home_points=110.0, away_points=120.0)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
     median = data["median_records"]
@@ -133,7 +134,7 @@ async def test_h2h_matrix_median_with_match_type_filter(client, db_session):
     await create_matchup(db_session, season, r1, r2, week=15, matchup_id=2, home_points=70.0, away_points=130.0, match_type="playoff")
 
     # Filter regular only
-    response = await client.get("/api/matchups/head-to-head-matrix?match_type=regular")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix?match_type=regular")
     data = response.json()
     assert data["median_records"]["u1"]["wins"] == 1
     assert data["median_records"]["u1"]["losses"] == 0
@@ -141,7 +142,7 @@ async def test_h2h_matrix_median_with_match_type_filter(client, db_session):
     assert data["median_records"]["u2"]["losses"] == 1
 
     # Filter playoff only
-    response = await client.get("/api/matchups/head-to-head-matrix?match_type=playoff")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix?match_type=playoff")
     data = response.json()
     assert data["median_records"]["u1"]["wins"] == 0
     assert data["median_records"]["u1"]["losses"] == 1
@@ -166,7 +167,7 @@ async def test_h2h_matrix_across_multiple_seasons(client, db_session):
     # 2024: u2 wins
     await create_matchup(db_session, s2024, r1_24, r2_24, week=1, matchup_id=1, home_points=90.0, away_points=110.0)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
     assert data["matrix"]["u1"]["u2"]["wins"] == 1
@@ -175,11 +176,14 @@ async def test_h2h_matrix_across_multiple_seasons(client, db_session):
 
 async def test_h2h_matrix_empty_league(client, db_session):
     """No matchups returns empty matrix and median records."""
-    # Create active users but no matchups
-    await create_user(db_session, id="u1", display_name="Alice")
-    await create_user(db_session, id="u2", display_name="Bob")
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", display_name="Bob")
+    await create_roster(db_session, season, u1, roster_id=1)
+    await create_roster(db_session, season, u2, roster_id=2)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
     assert len(data["owners"]) == 2
@@ -195,12 +199,13 @@ async def test_h2h_matrix_only_active_users(client, db_session):
     u2 = await create_user(db_session, id="u2", display_name="Bob", is_active=True)
     u_inactive = await create_user(db_session, id="u3", display_name="Inactive", is_active=False)
     r1 = await create_roster(db_session, season, u1, roster_id=1)
+    await create_roster(db_session, season, u2, roster_id=2)
     r_inactive = await create_roster(db_session, season, u_inactive, roster_id=3)
 
     # Matchup between active and inactive user
     await create_matchup(db_session, season, r1, r_inactive, week=1, matchup_id=1, home_points=120.0, away_points=100.0)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
     owner_ids = [o["user_id"] for o in data["owners"]]
@@ -222,7 +227,7 @@ async def test_h2h_matrix_response_has_all_fields(client, db_session):
 
     await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1, home_points=120.0, away_points=100.0)
 
-    response = await client.get("/api/matchups/head-to-head-matrix")
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
     assert response.status_code == 200
     data = response.json()
 

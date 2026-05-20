@@ -10,6 +10,7 @@ class Season(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     league_id = Column(String(50), ForeignKey("leagues.id"), nullable=False)
+    group_id = Column(String(50), nullable=True, index=True)  # canonical ID shared by all seasons in a dynasty chain
     year = Column(Integer, nullable=False)
     num_divisions = Column(Integer, default=2)  # Changed from 4 to 2
     playoff_structure = Column(JSON)  # Playoff bracket configuration

@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 from tests.conftest import (
     create_league, create_season, create_user, create_season_award, create_roster,
 )
@@ -14,7 +15,7 @@ async def test_get_all_history_success(client, db_session):
     await create_season_award(db_session, s2023, user1, award_type="champion")
     await create_season_award(db_session, s2024, user2, award_type="champion")
 
-    response = await client.get("/api/league-history")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history")
     assert response.status_code == 200
     data = response.json()
     assert data["total_seasons"] == 2
@@ -24,7 +25,7 @@ async def test_get_all_history_success(client, db_session):
 
 
 async def test_get_all_history_empty(client):
-    response = await client.get("/api/league-history")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history")
     assert response.status_code == 200
     data = response.json()
     assert data["total_seasons"] == 0
@@ -39,7 +40,7 @@ async def test_get_all_history_season_without_awards_excluded(client, db_session
     await create_roster(db_session, s2024, user, roster_id=1)
     await create_season_award(db_session, s2024, user, award_type="champion")
 
-    response = await client.get("/api/league-history")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history")
     assert response.status_code == 200
     data = response.json()
     assert data["total_seasons"] == 1
@@ -64,7 +65,7 @@ async def test_get_season_history_success(client, db_session):
     await create_season_award(db_session, season, div2, award_type="division_winner", award_detail="Division 2")
     await create_season_award(db_session, season, consolation, award_type="consolation")
 
-    response = await client.get("/api/league-history/2024")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history/2024")
     assert response.status_code == 200
     data = response.json()
     assert data["year"] == 2024
@@ -77,7 +78,7 @@ async def test_get_season_history_success(client, db_session):
 
 
 async def test_get_season_history_not_found(client):
-    response = await client.get("/api/league-history/2020")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history/2020")
     assert response.status_code == 404
     assert "No history found for season 2020" in response.json()["detail"]
 
@@ -89,7 +90,7 @@ async def test_season_history_champion_only(client, db_session):
     await create_roster(db_session, season, user, roster_id=1)
     await create_season_award(db_session, season, user, award_type="champion")
 
-    response = await client.get("/api/league-history/2024")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history/2024")
     assert response.status_code == 200
     data = response.json()
     assert data["champion"] is not None
@@ -113,7 +114,7 @@ async def test_season_history_includes_division_names_from_metadata(client, db_s
         award_type="division_winner", award_detail="Division 1",
     )
 
-    response = await client.get("/api/league-history/2024")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history/2024")
     assert response.status_code == 200
     data = response.json()
     assert data["division_names"]["1"] == "Havoc"
@@ -135,10 +136,10 @@ async def test_incomplete_season_without_champion_excluded(client, db_session):
     )
 
     # Should not appear in all-history listing
-    response = await client.get("/api/league-history")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history")
     assert response.status_code == 200
     assert response.json()["total_seasons"] == 0
 
     # Should return 404 for direct season lookup
-    response = await client.get("/api/league-history/2025")
+    response = await client.get(f"{LEAGUE_PREFIX}/league-history/2025")
     assert response.status_code == 404

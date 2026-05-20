@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Roster, Season, User, Player
 
 router = APIRouter()
@@ -10,12 +11,17 @@ POSITION_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
 
 
 @router.get("/taxi-squads")
-async def get_taxi_squads(db: AsyncSession = Depends(get_db)):
+async def get_taxi_squads(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get all taxi squads for the current (latest) season."""
 
-    # Get the latest season
     result = await db.execute(
-        select(Season).order_by(Season.year.desc()).limit(1)
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(Season.year.desc())
+        .limit(1)
     )
     season = result.scalar_one_or_none()
     if not season:

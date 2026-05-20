@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 import pytest
 from tests.conftest import create_league, create_user, create_season, create_roster, create_player
 
@@ -13,7 +14,7 @@ async def test_taxi_squads_returns_teams_with_players(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, taxi=["p1", "p2"])
     await db_session.commit()
 
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     assert resp.status_code == 200
     data = resp.json()
 
@@ -41,7 +42,7 @@ async def test_taxi_squads_excludes_empty_teams(client, db_session):
     await create_roster(db_session, season, user2, roster_id=2, taxi=[])
     await db_session.commit()
 
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     data = resp.json()
 
     assert len(data["teams"]) == 1
@@ -57,7 +58,7 @@ async def test_taxi_squads_unknown_player_shows_id(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, taxi=["unknown_999"])
     await db_session.commit()
 
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     data = resp.json()
 
     assert len(data["teams"]) == 1
@@ -70,7 +71,7 @@ async def test_taxi_squads_unknown_player_shows_id(client, db_session):
 @pytest.mark.asyncio
 async def test_taxi_squads_empty_when_no_data(client, db_session):
     """Returns empty teams list when no seasons exist."""
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     data = resp.json()
 
     assert data["season"] is None
@@ -89,7 +90,7 @@ async def test_taxi_squads_uses_latest_season(client, db_session):
     await create_roster(db_session, season_new, user, roster_id=2, taxi=[])
     await db_session.commit()
 
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     data = resp.json()
 
     assert data["season"] == 2025
@@ -107,7 +108,7 @@ async def test_taxi_squads_response_has_all_fields(client, db_session):
     await create_roster(db_session, season, user, roster_id=1, team_name="Team Alpha", taxi=["p1"])
     await db_session.commit()
 
-    resp = await client.get("/api/taxi-squads")
+    resp = await client.get(f"{LEAGUE_PREFIX}/taxi-squads")
     data = resp.json()
 
     assert "season" in data

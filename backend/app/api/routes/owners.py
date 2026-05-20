@@ -4,6 +4,7 @@ from sqlalchemy import select, desc, or_
 from statistics import median as calc_median
 from collections import defaultdict
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import User, Roster, Season, Matchup, League, SeasonAward
 from typing import Dict, Any, List
 
@@ -11,15 +12,25 @@ router = APIRouter()
 
 
 @router.get("/owners")
-async def get_all_owners(db: AsyncSession = Depends(get_db)):
+async def get_all_owners(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get all owners with their career statistics."""
-    result = await db.execute(select(User))
+    # Only return users who have rosters in this league's seasons
+    result = await db.execute(
+        select(User)
+        .join(Roster, User.id == Roster.user_id)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Season.group_id == league_id)
+        .distinct()
+    )
     users = result.scalars().all()
 
     owner_stats = []
     for user in users:
-        stats = await _calculate_owner_stats(db, user.id)
-        trophies = await _count_trophies(db, user.id)
+        stats = await _calculate_owner_stats(db, user.id, league_id)
+        trophies = await _count_trophies(db, user.id, league_id)
         owner_stats.append({
             "user_id": user.id,
             "username": user.username,
@@ -29,7 +40,6 @@ async def get_all_owners(db: AsyncSession = Depends(get_db)):
             **stats
         })
 
-    # Sort by regular season wins descending
     owner_stats.sort(key=lambda x: x["total_wins"], reverse=True)
 
     return {
@@ -39,7 +49,11 @@ async def get_all_owners(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/owners/{user_id}")
-async def get_owner_details(user_id: str, db: AsyncSession = Depends(get_db)):
+async def get_owner_details(
+    user_id: str,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get detailed statistics for a specific owner."""
     result = await db.execute(
         select(User).where(User.id == user_id)
@@ -49,11 +63,11 @@ async def get_owner_details(user_id: str, db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Owner not found")
 
-    # Get all rosters for this owner
+    # Get all rosters for this owner in this league's seasons
     result = await db.execute(
         select(Roster, Season)
         .join(Season, Roster.season_id == Season.id)
-        .where(Roster.user_id == user_id)
+        .where(Roster.user_id == user_id, Season.group_id == league_id)
         .order_by(desc(Season.year))
     )
     rosters_with_seasons = result.all()
@@ -101,8 +115,8 @@ async def get_owner_details(user_id: str, db: AsyncSession = Depends(get_db)):
         })
 
     # Calculate career stats and trophies
-    stats = await _calculate_owner_stats(db, user_id)
-    trophies = await _count_trophies(db, user_id)
+    stats = await _calculate_owner_stats(db, user_id, league_id)
+    trophies = await _count_trophies(db, user_id, league_id)
 
     return {
         "user_id": user.id,
@@ -173,10 +187,12 @@ async def _calculate_categorized_stats(db: AsyncSession, roster_ids: List[int]) 
     return categories
 
 
-async def _count_trophies(db: AsyncSession, user_id: str) -> Dict[str, int]:
-    """Count trophy awards for an owner: champion, division_winner, most_points, consolation, bench_points."""
+async def _count_trophies(db: AsyncSession, user_id: str, league_id: str) -> Dict[str, int]:
+    """Count trophy awards for an owner within a specific league."""
     result = await db.execute(
-        select(SeasonAward).where(SeasonAward.user_id == user_id)
+        select(SeasonAward)
+        .join(Season, SeasonAward.season_id == Season.id)
+        .where(SeasonAward.user_id == user_id, Season.group_id == league_id)
     )
     awards = result.scalars().all()
 
@@ -187,10 +203,12 @@ async def _count_trophies(db: AsyncSession, user_id: str) -> Dict[str, int]:
     return counts
 
 
-async def _calculate_owner_stats(db: AsyncSession, user_id: str) -> Dict[str, Any]:
-    """Calculate owner career statistics across all categories."""
+async def _calculate_owner_stats(db: AsyncSession, user_id: str, league_id: str) -> Dict[str, Any]:
+    """Calculate owner career statistics within a specific league."""
     result = await db.execute(
-        select(Roster).where(Roster.user_id == user_id)
+        select(Roster)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Roster.user_id == user_id, Season.group_id == league_id)
     )
     rosters = result.scalars().all()
 

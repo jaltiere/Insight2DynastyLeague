@@ -4,6 +4,7 @@ from sqlalchemy import select, desc
 from statistics import median as calc_median
 from collections import defaultdict
 from app.database import get_db
+from app.api.deps import get_league_id
 from app.models import Season, Roster, User, League, Matchup
 from typing import List, Dict, Any
 
@@ -11,31 +12,39 @@ router = APIRouter()
 
 
 @router.get("/standings")
-async def get_current_standings(db: AsyncSession = Depends(get_db)):
+async def get_current_standings(
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get current season standings."""
-    # Get the most recent season
     result = await db.execute(
-        select(Season).order_by(desc(Season.year)).limit(1)
+        select(Season)
+        .where(Season.group_id == league_id)
+        .order_by(desc(Season.year))
+        .limit(1)
     )
     season = result.scalar_one_or_none()
 
     if not season:
         raise HTTPException(status_code=404, detail="No season data found")
 
-    return await _get_season_standings(db, season.year)
+    return await _get_season_standings(db, season.year, league_id)
 
 
 @router.get("/standings/{season_year}")
-async def get_historical_standings(season_year: int, db: AsyncSession = Depends(get_db)):
+async def get_historical_standings(
+    season_year: int,
+    league_id: str = Depends(get_league_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Get historical standings for a specific season."""
-    return await _get_season_standings(db, season_year)
+    return await _get_season_standings(db, season_year, league_id)
 
 
-async def _get_season_standings(db: AsyncSession, year: int) -> Dict[str, Any]:
+async def _get_season_standings(db: AsyncSession, year: int, league_id: str) -> Dict[str, Any]:
     """Helper function to get standings for a specific season."""
-    # Get season
     result = await db.execute(
-        select(Season).where(Season.year == year)
+        select(Season).where(Season.group_id == league_id, Season.year == year)
     )
     season = result.scalar_one_or_none()
 

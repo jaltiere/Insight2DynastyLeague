@@ -1,3 +1,4 @@
+﻿from tests.conftest import LEAGUE_PREFIX
 """Tests for power rankings endpoints including snapshot and trends."""
 import pytest
 from httpx import AsyncClient
@@ -28,7 +29,7 @@ async def test_get_current_power_rankings_returns_200(client: AsyncClient, db_se
         home_points=130.0, away_points=110.0, winner_roster_id=r1.id
     )
 
-    resp = await client.get("/api/power-rankings")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings")
     assert resp.status_code == 200
     body = resp.json()
     assert "season" in body
@@ -44,7 +45,7 @@ async def test_power_rankings_response_has_all_fields(client: AsyncClient, db_se
     user = await create_user(db_session, id="u1", username="alice", display_name="Alice")
     await create_roster(db_session, season, user, roster_id=1)
 
-    resp = await client.get("/api/power-rankings")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings")
     assert resp.status_code == 200
     team = resp.json()["rankings"][0]
     expected_fields = [
@@ -65,7 +66,7 @@ async def test_rank_change_is_none_without_snapshot(client: AsyncClient, db_sess
     user = await create_user(db_session, id="u1", username="alice", display_name="Alice")
     await create_roster(db_session, season, user, roster_id=1)
 
-    resp = await client.get("/api/power-rankings")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings")
     assert resp.status_code == 200
     team = resp.json()["rankings"][0]
     assert team["rank_change"] is None
@@ -95,7 +96,7 @@ async def test_rank_change_populated_after_snapshot(client: AsyncClient, db_sess
     ))
     await db_session.flush()
 
-    resp = await client.get("/api/power-rankings")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings")
     assert resp.status_code == 200
     rankings = resp.json()["rankings"]
 
@@ -111,7 +112,7 @@ async def test_trends_returns_empty_when_no_snapshots(client: AsyncClient, db_se
     league = await create_league(db_session)
     await create_season(db_session, league, year=2024)
 
-    resp = await client.get("/api/power-rankings/2024/trends")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024/trends")
     assert resp.status_code == 200
     body = resp.json()
     assert body["season"] == 2024
@@ -135,7 +136,7 @@ async def test_trends_returns_snapshot_data(client: AsyncClient, db_session: Asy
         ))
     await db_session.flush()
 
-    resp = await client.get("/api/power-rankings/2024/trends")
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024/trends")
     assert resp.status_code == 200
     body = resp.json()
     assert body["weeks"] == [3, 5, 7]
@@ -153,7 +154,7 @@ async def test_snapshot_endpoint_requires_auth(client: AsyncClient, db_session: 
     await create_season(db_session, league, year=2024)
 
     resp = await client.post(
-        "/api/power-rankings/snapshot",
+        f"{LEAGUE_PREFIX}/power-rankings/snapshot",
         params={"season_year": 2024, "week": 6},
         headers={"Authorization": "Bearer wrong-secret"},
     )
@@ -174,7 +175,7 @@ async def test_snapshot_endpoint_saves_snapshot(client: AsyncClient, db_session:
     await create_roster(db_session, season, user2, roster_id=2)
 
     resp = await client.post(
-        "/api/power-rankings/snapshot",
+        f"{LEAGUE_PREFIX}/power-rankings/snapshot",
         params={"season_year": 2024, "week": 6},
         headers={"Authorization": f"Bearer {cron_secret}"},
     )
