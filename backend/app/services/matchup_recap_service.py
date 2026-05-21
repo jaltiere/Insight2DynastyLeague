@@ -11,6 +11,7 @@ from app.models.matchup import Matchup
 from app.models.matchup_player_point import MatchupPlayerPoint
 from app.models.matchup_recap import MatchupRecap
 from app.models.roster import Roster
+from app.models.season_award import SeasonAward
 from app.models.user import User
 from app.models.player import Player
 from app.models.season import Season
@@ -226,15 +227,20 @@ class MatchupRecapService:
         # Determine bracket/playoff context
         bracket_label = await self._get_bracket_label(matchup)
 
+        # Look up the previous season's champion for championship games
+        season_year = await self._get_season_year(matchup.season_id)
+        prev_champion = await self._get_previous_champion(matchup.season_id, season_year)
+
         context = {
             "winner": winner_name,
             "loser": loser_name,
             "winner_score": winner_score,
             "loser_score": loser_score,
             "week": matchup.week,
-            "season": await self._get_season_year(matchup.season_id),
+            "season": season_year,
             "match_type": matchup.match_type,
             "bracket_label": bracket_label,
+            "prev_champion": prev_champion,
             "top_performers": top_performers,
             "lineup_mistakes": lineup_mistakes,
             "h2h_summary": h2h_summary,
@@ -248,7 +254,6 @@ class MatchupRecapService:
                 "standings_impact": standings_delta,
             }
         }
-
         return context
 
     async def _build_prediction_context(self, matchup: Matchup) -> Dict[str, Any]:
@@ -384,11 +389,20 @@ class MatchupRecapService:
 
     def _build_recap_prompt(self, context: Dict[str, Any]) -> str:
         """Build prompt for weekly recap generation."""
+        prev_champ = context.get('prev_champion')
+        if prev_champ:
+            champ_line = f"Previous season's champion: {prev_champ}"
+            champ_instruction = f"- If this is the championship game and {prev_champ} is in it, you may reference them as the defending champion. Otherwise do NOT use 'dethrones' or 'defending champion' language."
+        else:
+            champ_line = "Previous champion: unknown"
+            champ_instruction = "- Do NOT use 'dethrones' or 'defending champion' language — you do not know who won last season."
+
         return f"""You are a snarky fantasy football analyst writing a matchup recap for a dynasty league.
 
 GAME CONTEXT: {context['bracket_label']}
 Matchup: {context['winner']} ({context['winner_score']:.2f} pts) defeated {context['loser']} ({context['loser_score']:.2f} pts)
 Week {context['week']}, {context['season']} season
+{champ_line}
 
 Head-to-Head History:
 {context['h2h_summary']}
@@ -410,6 +424,7 @@ IMPORTANT INSTRUCTIONS:
 - DO NOT attribute a player to the wrong team - verify team attribution before mentioning any player
 - Tailor your commentary to the stakes of THIS specific game
 - Be snarky and fun, but contextually aware
+{champ_instruction}
 
 Write 3-4 sentences: highlight the outcome with appropriate context for the bracket/playoff round, call out the biggest lineup mistake (if any), mention a standout player WITH CORRECT TEAM ATTRIBUTION, and explain what this result means. Under 100 words."""
 
@@ -731,6 +746,45 @@ Write 2-3 sentences: predict the winner based on the data provided, highlight wh
             return "Battle to avoid bottom of standings"
         else:
             return "Mid-pack battle for playoff positioning"
+
+    async def _get_previous_champion(self, current_season_id: int, current_year: int) -> Optional[str]:
+        """Return the display name of the previous season's champion, or None if not found."""
+        try:
+            # Find the season for the previous year in the same league group
+            current_season_result = await self.db.execute(
+                select(Season).where(Season.id == current_season_id)
+            )
+            current_season = current_season_result.scalar_one_or_none()
+            if not current_season:
+                return None
+
+            prev_season_result = await self.db.execute(
+                select(Season).where(
+                    Season.group_id == current_season.group_id,
+                    Season.year == current_year - 1,
+                )
+            )
+            prev_season = prev_season_result.scalar_one_or_none()
+            if not prev_season:
+                return None
+
+            award_result = await self.db.execute(
+                select(SeasonAward).where(
+                    SeasonAward.season_id == prev_season.id,
+                    SeasonAward.award_type == "champion",
+                )
+            )
+            award = award_result.scalar_one_or_none()
+            if not award:
+                return None
+
+            user_result = await self.db.execute(
+                select(User).where(User.id == award.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            return (user.display_name or user.username) if user else None
+        except Exception:
+            return None
 
     async def _get_bracket_label(self, matchup: Matchup) -> str:
         """Get human-readable bracket label for playoff matchups."""
