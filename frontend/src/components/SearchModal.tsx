@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { usePlayerModal } from '../context/PlayerModalContext';
 
@@ -53,6 +53,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { leagueSlug } = useParams<{ leagueSlug: string }>();
   const { openPlayer } = usePlayerModal();
 
   useEffect(() => {
@@ -88,15 +89,16 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const handleSelect = useCallback(
     (result: SearchResult) => {
       onClose();
+      const base = `/${leagueSlug}`;
       if (result.type === 'player') {
         openPlayer(result.id);
       } else if (result.type === 'owner') {
-        navigate('/owners');
+        navigate(`${base}/owners?owner=${result.id}`);
       } else if (result.type === 'draft') {
-        navigate(result.meta?.year ? `/drafts?year=${result.meta.year}` : '/drafts');
+        navigate(result.meta?.year ? `${base}/drafts?year=${result.meta.year}` : `${base}/drafts`);
       }
     },
-    [navigate, onClose, openPlayer]
+    [navigate, onClose, openPlayer, leagueSlug]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
