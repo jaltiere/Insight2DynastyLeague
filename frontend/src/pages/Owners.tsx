@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 
 type RecordCategory = 'regular_season' | 'playoff' | 'consolation';
@@ -89,10 +90,14 @@ function SortArrow({ field, sortField, sortDir }: { field: SortField; sortField:
 }
 
 export default function Owners() {
-  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(
+    searchParams.get('owner')
+  );
   const [activeCategory, setActiveCategory] = useState<RecordCategory>('regular_season');
   const [sortField, setSortField] = useState<SortField>('wins');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const { data: ownersData, isLoading, error } = useQuery({
     queryKey: ['owners'],
@@ -104,6 +109,13 @@ export default function Owners() {
     queryFn: () => api.getOwnerDetails(selectedOwnerId!).then(res => res.data),
     enabled: !!selectedOwnerId,
   });
+
+  // Scroll to detail panel when arriving from search with ?owner= pre-selected
+  useEffect(() => {
+    if (selectedOwnerId && ownerDetails && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [ownerDetails]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -336,7 +348,7 @@ export default function Owners() {
 
       {/* Season Breakdown (shown when owner selected) */}
       {selectedOwnerId && (
-        <div className="bg-white rounded-lg shadow">
+        <div ref={detailRef} className="bg-white rounded-lg shadow">
           <div className="bg-green-600 text-white px-6 py-3 rounded-t-lg">
             <h2 className="text-xl font-semibold">
               {ownerDetails
