@@ -57,8 +57,9 @@ export function LeagueProvider({ children }: { children: ReactNode }) {
       if (!league || league.slug === currentLeagueRef.current?.slug) return;
       setCurrentLeague(league);
       setCurrentLeagueSlug(slug);
+      queryClient.resetQueries();
     },
-    [leagues], // stable — currentLeague read via ref, not closure
+    [leagues, queryClient], // stable — currentLeague read via ref, not closure
   );
 
   // Called by the league switcher UI — resets cached data and navigates.

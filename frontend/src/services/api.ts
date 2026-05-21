@@ -3,8 +3,12 @@ import axios from 'axios';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // Module-level slug used by the league-scoped interceptor.
-// Updated by LeagueContext whenever the active league changes.
-let _leagueSlug = 'insight2dynasty';
+// Initialized from the URL path so hard refreshes use the correct league
+// before LeagueContext finishes its async getLeagues() call.
+let _leagueSlug = (() => {
+  const slug = window.location.pathname.split('/')[1];
+  return slug || 'insight2dynasty';
+})();
 
 export function setCurrentLeagueSlug(slug: string) {
   _leagueSlug = slug;
