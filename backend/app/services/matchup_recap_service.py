@@ -392,10 +392,14 @@ class MatchupRecapService:
         prev_champ = context.get('prev_champion')
         if prev_champ:
             champ_line = f"Previous season's champion: {prev_champ}"
-            champ_instruction = f"- If this is the championship game and {prev_champ} is in it, you may reference them as the defending champion. Otherwise do NOT use 'dethrones' or 'defending champion' language."
+            champ_instruction = (
+                f"- NEVER use the word 'dethrones' or any form of it in any context."
+                f" If this is the championship game and {prev_champ} lost, you may call them the defending champion."
+                f" Otherwise do not reference a defending champion at all."
+            )
         else:
             champ_line = "Previous champion: unknown"
-            champ_instruction = "- Do NOT use 'dethrones' or 'defending champion' language — you do not know who won last season."
+            champ_instruction = "- NEVER use the word 'dethrones' or any form of it. Do not reference a defending champion — you do not have that information."
 
         return f"""You are a snarky fantasy football analyst writing a matchup recap for a dynasty league.
 
