@@ -1,7 +1,8 @@
 import os
 
-# Set test DATABASE_URL before any app modules are imported
+# Set test env vars before any app modules are imported so get_settings() caches test values
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite://"
+os.environ["CRON_SECRET"] = "change-me-in-production"
 
 import pytest
 from typing import AsyncGenerator
