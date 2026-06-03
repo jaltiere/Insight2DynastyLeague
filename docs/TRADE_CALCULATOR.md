@@ -118,7 +118,7 @@ Trade grades come from the [Trade Grading](./TRADE_GRADING.md) system.
 KTC values are refreshed automatically as part of the daily sync (`POST /api/sync/league`). They can also be refreshed manually:
 
 ```bash
-curl -X POST "https://api.insight2dynasty.com/api/trade-calculator/refresh" \
+curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/trade-calculator/refresh" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
@@ -140,7 +140,7 @@ The refresh fetches the KTC page, parses `playersArray`, fuzzy-matches player na
 
 ## API Endpoints
 
-All under `/api/trade-calculator/`:
+All under `/api/{league_slug}/trade-calculator/`:
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -148,6 +148,7 @@ All under `/api/trade-calculator/`:
 | `GET` | `/roster/{user_id}` | Owner's roster with KTC values and league PPG delta |
 | `GET` | `/roster-picks/{user_id}` | Picks owned by this team, tiered by standing |
 | `GET` | `/pick-values` | All cached pick values from KTC |
+| `GET` | `/search` | Search for players by name (for adding non-roster players) |
 | `GET` | `/h2h-trades/{uid_a}/{uid_b}` | Trade history between two owners |
 | `POST` | `/refresh` | Trigger a KTC value refresh (requires `CRON_SECRET`) |
 

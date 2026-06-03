@@ -112,37 +112,20 @@ This guide walks you through deploying the Insight2Dynasty League application to
 
 ### Step 5: Run Database Migrations
 
-**Important:** Migrations must be run separately from the application start to avoid health check timeouts.
-
-#### Option A: Using Railway CLI (Recommended)
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and link to your project
-railway login
-railway link
-
-# Run migrations
-railway run python backend/migrate.py
+**Migrations run automatically** as part of the backend start command:
+```
+alembic upgrade head && uvicorn app.main:app ...
 ```
 
-#### Option B: Using Railway Shell
-1. In Railway backend service, click **"Settings"** → **"Shell"**
-2. Run:
-   ```bash
-   python backend/migrate.py
-   ```
+No separate migration step is needed. On first deploy (or after adding new migrations), the start command applies them before the server comes up. You can verify by checking the Railway deployment logs for Alembic output.
 
-#### Option C: Run Locally Against Production Database
+If you need to run migrations manually against production:
 ```bash
 # Set production DATABASE_URL temporarily (get from Railway dashboard)
 export DATABASE_URL="<railway-database-url>"
 cd backend
 alembic upgrade head
 ```
-
-**Verify migrations succeeded** by checking the logs for "✅ Migrations completed successfully"
 
 ### Step 6: Initial Data Sync
 
@@ -303,7 +286,7 @@ curl -X POST https://your-backend.railway.app/api/cron/sync \
 
 **Solution:** The `cryptography` package is required for MySQL 8.0 authentication. It's already included in `backend/requirements.txt`:
 ```
-cryptography>=42.0.0
+cryptography>=48.0.0
 ```
 
 ### Issue 2: Foreign Key Constraint Error During Sync
@@ -361,9 +344,10 @@ Then set up domain forwarding: `insight2dynasty.com` → `www.insight2dynasty.co
 **Symptom:** Railway shows "Health check failed" or deployment crashes
 
 **Solutions:**
-1. **Check if migrations were run first:**
+1. **Check if migrations are up to date** — they run automatically on start, but verify Alembic output in Railway deployment logs. To run manually:
    ```bash
-   railway run python backend/migrate.py
+   export DATABASE_URL="<railway-database-url>"
+   cd backend && alembic upgrade head
    ```
 
 2. **Check Railway logs** for error messages:

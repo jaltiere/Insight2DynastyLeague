@@ -104,7 +104,7 @@ The `median_score` is the statistical median (not mean) of all teams' total rost
 ## API Endpoint
 
 ```
-GET /api/roster-analysis
+GET /api/{league_slug}/roster-analysis
 ```
 
 No authentication required. Always returns data for the **most recent season**.

@@ -163,8 +163,8 @@ Evaluates all-time success based on season awards accumulated across the full le
 
 ### Get Power Rankings
 ```
-GET /api/power-rankings
-GET /api/power-rankings/{season_year}
+GET /api/{league_slug}/power-rankings
+GET /api/{league_slug}/power-rankings/{season_year}
 ```
 
 Includes `rank_change` and `previous_rank` fields populated from the most recent weekly snapshot (both `null` before first snapshot is saved).
@@ -201,7 +201,7 @@ Includes `rank_change` and `previous_rank` fields populated from the most recent
 
 ### Get Roster Breakdown
 ```
-GET /api/power-rankings/{season_year}/roster/{roster_id}
+GET /api/{league_slug}/power-rankings/{season_year}/roster/{roster_id}
 ```
 
 **Response:**
@@ -230,7 +230,7 @@ GET /api/power-rankings/{season_year}/roster/{roster_id}
 
 ### Get Rank Trajectory (Trends)
 ```
-GET /api/power-rankings/{season_year}/trends
+GET /api/{league_slug}/power-rankings/{season_year}/trends
 ```
 
 Returns all weekly snapshots for the season, formatted for the rank trajectory line chart. Returns empty `weeks` and `teams` arrays before first snapshot is saved (offseason-safe).
@@ -258,7 +258,7 @@ Returns all weekly snapshots for the season, formatted for the rank trajectory l
 
 ### Save Snapshot (Admin)
 ```
-POST /api/power-rankings/snapshot?season_year={year}&week={week}
+POST /api/{league_slug}/power-rankings/snapshot?season_year={year}&week={week}
 Authorization: Bearer {CRON_SECRET}
 ```
 
