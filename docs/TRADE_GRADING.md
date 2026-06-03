@@ -433,7 +433,7 @@ For accurate grading, the algorithm requires:
 ### Get All Trade Grades
 
 ```http
-GET /api/trade-grades?season={year}&sort={mode}&owner_id={id}
+GET /api/{league_slug}/trade-grades?season={year}&sort={mode}&owner_id={id}
 ```
 
 **Query Parameters**:
@@ -456,7 +456,7 @@ GET /api/trade-grades?season={year}&sort={mode}&owner_id={id}
 ### Get Single Trade Grade
 
 ```http
-GET /api/trade-grades/{trade_id}
+GET /api/{league_slug}/trade-grades/{trade_id}
 ```
 
 Returns a single trade object (same shape as items in the `trades` array above). Returns 404 if not found or not a completed trade.

@@ -225,7 +225,7 @@ avg_grade = closest_grade(avg_points)
 ### Get All Draft Grades
 
 ```http
-GET /api/draft-grades?draft_type={type}&owner_id={id}
+GET /api/{league_slug}/draft-grades?draft_type={type}&owner_id={id}
 ```
 
 **Query Parameters**:
@@ -280,7 +280,7 @@ GET /api/draft-grades?draft_type={type}&owner_id={id}
 ### Get Single Draft Grade
 
 ```http
-GET /api/draft-grades/{draft_id}
+GET /api/{league_slug}/draft-grades/{draft_id}
 ```
 
 **Response**: Same structure as single draft object above

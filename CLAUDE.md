@@ -1,9 +1,12 @@
 # Insight2Dynasty - Project Guidelines
 
 ## Project Overview
-Insight2Dynasty is a fantasy football dynasty league website that integrates with the Sleeper platform. It provides comprehensive analytics, historical data, and league information for dynasty league members.
+Insight2Dynasty is a fantasy football dynasty league website that integrates with the Sleeper platform. It provides comprehensive analytics, historical data, and league information for dynasty league members. The site supports **multiple leagues** via `leagues.json` configuration, with per-league routing under `/api/{league_slug}/...`.
 
-**Sleeper League ID**: 1313933992642220032
+**Leagues** (configured in `backend/leagues.json`):
+- `insight2dynasty` (default) — Sleeper ID 1313933992642220032
+- `couch-crusaders` — Sleeper ID 1313956225737580544
+- `double-domination` — Sleeper ID 1313956150672125952
 
 ## Technology Stack
 
@@ -37,13 +40,13 @@ Insight2Dynasty is a fantasy football dynasty league website that integrates wit
 - **Domain Registrar**: GoDaddy
 
 **Required Dependencies (Already in requirements.txt):**
-- `cryptography>=42.0.0` - Required for MySQL 8.0 authentication (caching_sha2_password)
+- `cryptography>=48.0.0` - Required for MySQL 8.0 authentication (caching_sha2_password)
 
 **Environment Variables:**
 
 Backend (Railway):
 - `DATABASE_URL` - Auto-populated by Railway MySQL plugin
-- `SLEEPER_LEAGUE_ID` - 1313933992642220032
+- `SLEEPER_LEAGUE_ID` - Defaults to the `default` league in `leagues.json`; kept for sync_service compatibility
 - `CORS_ORIGINS` - https://www.insight2dynasty.com,http://localhost:5173
 - `CRON_SECRET` - Secure random string for scheduled sync and recap regeneration endpoints
 - `ANTHROPIC_API_KEY` - Claude API key for AI-generated matchup recaps (optional; mock mode if empty)
@@ -62,7 +65,7 @@ Insight2DynastyLeague/
 ├── frontend/                 # React + Vite application
 │   ├── src/
 │   │   ├── components/      # Reusable UI components
-│   │   ├── pages/           # Page components (6 main pages)
+│   │   ├── pages/           # Page components (~19 pages)
 │   │   ├── hooks/           # Custom React hooks
 │   │   ├── services/        # API client services
 │   │   ├── types/           # TypeScript type definitions
@@ -75,7 +78,7 @@ Insight2DynastyLeague/
 ├── backend/                 # FastAPI application
 │   ├── app/
 │   │   ├── api/            # API route handlers
-│   │   │   ├── routes/     # Endpoint definitions
+│   │   │   ├── routes/     # Endpoint definitions (25+ route files)
 │   │   │   └── deps.py     # Dependency injection
 │   │   ├── models/         # SQLAlchemy models
 │   │   ├── schemas/        # Pydantic schemas
@@ -85,8 +88,17 @@ Insight2DynastyLeague/
 │   │   ├── config.py       # Configuration management
 │   │   └── main.py         # FastAPI app entry point
 │   ├── alembic/            # Database migrations
+│   ├── leagues.json        # Multi-league configuration (slugs, Sleeper IDs)
 │   ├── requirements.txt
 │   └── .env                # Environment variables (not in git)
+│
+├── docs/                   # Feature documentation
+│   ├── TRADE_CALCULATOR.md
+│   ├── TRADE_GRADING.md
+│   ├── POWER_RANKINGS.md
+│   ├── ROSTER_ANALYSIS.md
+│   ├── DRAFT_RANKINGS.md
+│   └── DEPLOYMENT.md
 │
 ├── docker-compose.yml      # Local MySQL setup
 ├── .gitignore
@@ -108,6 +120,9 @@ Insight2DynastyLeague/
 9. **draft_picks** - Individual draft selections
 10. **season_awards** - Season winners (champion, division, consolation)
 11. **matchup_recaps** - AI-generated recaps and predictions per matchup
+12. **power_ranking_snapshots** - Weekly power ranking snapshots per team (used for trend charts)
+13. **player_values** - KTC dynasty values scraped per sync (used by trade calculator)
+14. **matchup_player_points** - Per-player point totals within each matchup
 
 ### Important Notes
 - Division structure changed from 4 divisions to 2 divisions
@@ -117,26 +132,59 @@ Insight2DynastyLeague/
 ## API Endpoints
 
 ### Backend API Structure
-All endpoints under `/api` prefix:
+Routes are split into **global** (no league scope) and **league-scoped** (under `/api/{league_slug}/...`).
 
-- **Standings**: `/api/standings`, `/api/standings/{season}`
-- **Players**: `/api/players`, `/api/players/{player_id}`
-- **Matchups**: `/api/matchups/head-to-head/{owner1}/{owner2}`
-- **Owners**: `/api/owners`, `/api/owners/{owner_id}`
-- **Drafts**: `/api/drafts`, `/api/drafts/{year}`
-- **League History**: `/api/league-history`, `/api/league-history/{season}`
-- **Matchup Recaps**: `/api/matchup-recaps/current`, `/api/matchup-recaps/previous`, `/api/matchup-recaps/week/{week}`
-- **Recap Admin**: `/api/matchup-recaps/regenerate/{week}`, `/api/matchup-recaps/regenerate-predictions/{week}` (require CRON_SECRET)
-- **Sync**: `/api/sync/league` (admin endpoint)
+**Global routes** (`/api/...`):
+- **Leagues**: `GET /api/leagues` — list all configured leagues
+- **Players**: `GET /api/players`, `GET /api/players/{player_id}`
+- **Sync**: `POST /api/sync/league`, `POST /api/sync/history`, `POST /api/cron/sync` (CRON_SECRET required)
+
+**League-scoped routes** (`/api/{league_slug}/...`):
+- **Standings**: `GET /standings`, `GET /standings/{season_year}`
+- **Owners**: `GET /owners`, `GET /owners/{owner_id}`
+- **Matchups**: `GET /matchups/head-to-head/{owner1}/{owner2}`
+- **Drafts**: `GET /drafts`, `GET /drafts/{year}`
+- **Draft Picks**: `GET /draft-picks`
+- **Draft Grades**: `GET /draft-grades`, `GET /draft-grades/{draft_id}`
+- **League History**: `GET /league-history`, `GET /league-history/{season}`
+- **Player Records**: `GET /player-records`
+- **Rookie Records**: `GET /rookie-records`
+- **Team Records**: `GET /team-records`
+- **Taxi Squads**: `GET /taxi-squads`
+- **Free Agents**: `GET /free-agents`
+- **Transactions**: `GET /transactions`
+- **Trade Grades**: `GET /trade-grades`, `GET /trade-grades/{trade_id}`
+- **Trade Calculator**: `GET /trade-calculator/owners`, `GET /trade-calculator/roster/{user_id}`, `GET /trade-calculator/search`, `GET /trade-calculator/pick-values`, `GET /trade-calculator/roster-picks/{user_id}`, `GET /trade-calculator/h2h-trades/{user_id_a}/{user_id_b}`, `POST /trade-calculator/refresh` (CRON_SECRET)
+- **Playoffs**: `GET /playoffs`
+- **Power Rankings**: `GET /power-rankings`, `GET /power-rankings/{season_year}`, `GET /power-rankings/{season_year}/trends`, `POST /power-rankings/snapshot` (CRON_SECRET)
+- **Matchup Recaps**: `GET /matchup-recaps/current`, `GET /matchup-recaps/previous`, `GET /matchup-recaps/week/{week}`, `POST /matchup-recaps/regenerate/{week}` (CRON_SECRET), `POST /matchup-recaps/regenerate-predictions/{week}` (CRON_SECRET)
+- **Newsletter**: `GET /newsletter/{week}`
+- **Roster Analysis**: `GET /roster-analysis`
+- **Search**: `GET /search`
+- **Seasons**: seasons metadata endpoints
 
 ## Frontend Pages
 
 1. **Home/Standings** - Current season standings, playoff bracket, recent transactions
 2. **Player Statistics** - Searchable player table with filters
-3. **Head-to-Head History** - Owner vs owner comparison
-4. **Owner Records** - Historical records and season breakdowns
-5. **Draft Results** - Year-by-year draft boards
-6. **League History** - Champions, division winners, consolation bracket winners
+3. **Head-to-Head** - Owner vs owner comparison
+4. **Owners** - Historical records and season breakdowns
+5. **Drafts** - Year-by-year draft boards
+6. **Draft Rankings** - Dynasty draft rankings and grades
+7. **League History** - Champions, division winners, consolation bracket winners
+8. **Records** - All-time statistical records
+9. **Team Records** - Per-team win/loss history
+10. **Matchup Recaps** - AI-generated weekly matchup write-ups and predictions
+11. **Playoffs** - Playoff bracket history
+12. **Power Rankings** - Weekly power rankings with trend charts
+13. **Roster Analysis** - Dynasty roster classification (Win Now / Rebuilding / etc.)
+14. **Trade Calculator** - Roster-aware KTC-based trade evaluator
+15. **Trade Grades** - Retrospective grading of completed trades
+16. **Transactions** - Trade and waiver wire history
+17. **Taxi Squads** - Rookie taxi squad tracker
+18. **Free Agents** - Available free agents
+19. **Future Draft Picks** - Traded future pick tracker
+20. **Newsletter** - Formatted weekly recap output
 
 ## Development Workflow
 
@@ -195,7 +243,7 @@ All endpoints under `/api` prefix:
 - Reference issues if applicable: "Fix #123: Add player search"
 - Include co-author line for AI assistance:
   ```
-  Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+  Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
   ```
 
 ### Example Workflow
@@ -313,11 +361,11 @@ Both regenerate endpoints accept a `?force=true` query parameter to bypass the o
 
 ```bash
 # Regenerate recaps for a specific week (e.g., championship week 17)
-curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate/17?season=2025&force=true" \
+curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/matchup-recaps/regenerate/17?season=2025&force=true" \
   -H "Authorization: Bearer $CRON_SECRET"
 
 # Regenerate predictions for a specific week
-curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/5?season=2025&force=true" \
+curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/matchup-recaps/regenerate-predictions/5?season=2025&force=true" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
@@ -328,23 +376,27 @@ The Thursday prediction sync won't run in time when Week 1 has a Wednesday night
 
 ```bash
 # Run before the first game of Week 1 (Wednesday or whenever it kicks off)
-curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/1?season=2026" \
+curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/matchup-recaps/regenerate-predictions/1?season=2026" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 No `?force=true` needed — the season will be active by then. Update the `season` param each year.
 
 ### Read Endpoints (No Auth Required)
-- `GET /api/matchup-recaps/current` - Current week matchups with predictions (empty during offseason)
-- `GET /api/matchup-recaps/previous` - Previous week recaps (shows championship week during offseason)
-- `GET /api/matchup-recaps/week/{week}?season=YYYY` - Recaps for a specific week
-- `GET /api/matchup-recaps/newsletter/{week}` - Recaps formatted for newsletter
+- `GET /api/{league_slug}/matchup-recaps/current` - Current week matchups with predictions (empty during offseason)
+- `GET /api/{league_slug}/matchup-recaps/previous` - Previous week recaps (shows championship week during offseason)
+- `GET /api/{league_slug}/matchup-recaps/week/{week}?season=YYYY` - Recaps for a specific week
+- `GET /api/{league_slug}/newsletter/{week}` - Recaps formatted for newsletter
 
 ### Database Storage
 - Table: `matchup_recaps` with unique constraint on `(matchup_id, recap_type)`
 - Recap types: `weekly`, `playoff`, `prediction`
 - `generated_at` timestamp tracks when each recap was last generated
 - No automatic expiration — recaps persist until explicitly regenerated
+
+## Global Search
+
+A command-palette style search (Ctrl+K / ⌘K) lets users search across owners, players, and drafts within the current league. Results are fetched from `GET /api/{league_slug}/search?q=...` and navigate to the relevant league-scoped page on selection.
 
 ## Trade Calculator
 
