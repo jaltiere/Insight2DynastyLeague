@@ -1,0 +1,11 @@
+# Normalize all text files to LF in the repository.
+# Working-tree line endings are left to each machine's core.autocrlf/core.eol,
+# so Windows and WSL checkouts of this repo stay clean against the same index.
+* text=auto
+
+# Binary assets - never touch line endings
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
