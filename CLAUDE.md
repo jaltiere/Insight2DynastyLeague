@@ -137,7 +137,7 @@ Routes are split into **global** (no league scope) and **league-scoped** (under 
 **Global routes** (`/api/...`):
 - **Leagues**: `GET /api/leagues` — list all configured leagues
 - **Players**: `GET /api/players`, `GET /api/players/{player_id}`
-- **Sync**: `POST /api/sync/league`, `POST /api/sync/history`, `POST /api/cron/sync` (CRON_SECRET required)
+- **Sync**: `POST /api/sync/league`, `POST /api/sync/history`, `POST /api/cron/sync` (all require CRON_SECRET bearer auth)
 
 **League-scoped routes** (`/api/{league_slug}/...`):
 - **Standings**: `GET /standings`, `GET /standings/{season_year}`
@@ -199,7 +199,7 @@ Routes are split into **global** (no league scope) and **league-scoped** (under 
 - Frontend: `frontend/.env` (see `frontend/.env.example`)
 
 ### Data Sync
-- Manual sync: `POST /api/sync/league`
+- Manual sync: `POST /api/sync/league` with `Authorization: Bearer $CRON_SECRET`
 - Sync pulls data from Sleeper API and updates MySQL
 - Run sync after setup to populate initial data
 

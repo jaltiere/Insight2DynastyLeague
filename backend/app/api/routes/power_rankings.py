@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from statistics import stdev as calc_stdev
 from typing import List, Dict, Any, Tuple, Optional
 from app.database import get_db
-from app.api.deps import get_league_id
+from app.api.deps import get_league_id, verify_cron_secret
 from app.models import Season, Roster, User, Player, Matchup, SeasonAward, MatchupPlayerPoint
 from app.models.player_value import PlayerValue
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
@@ -207,21 +207,14 @@ async def get_power_rankings_trends(
     return PowerRankingTrendsResponse(season=season_year, weeks=weeks, teams=teams)
 
 
-@router.post("/power-rankings/snapshot")
+@router.post("/power-rankings/snapshot", dependencies=[Depends(verify_cron_secret)])
 async def save_power_rankings_snapshot(
     season_year: int,
     week: int,
-    authorization: str = Header(...),
     league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Save a power rankings snapshot for the given week. Requires CRON_SECRET auth."""
-    from app.config import get_settings
-    settings = get_settings()
-    expected = f"Bearer {settings.CRON_SECRET}"
-    if not settings.CRON_SECRET or authorization != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     saved = await _save_snapshot(db, season_year, week, league_id=league_id)
     await db.commit()
     return {"status": "ok", "week": week, "season_year": season_year, "teams_saved": saved}

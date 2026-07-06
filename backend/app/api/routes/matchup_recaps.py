@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from typing import Optional, List
 from app.database import get_db
-from app.api.deps import get_league_id, get_league_config
+from app.api.deps import get_league_id, get_league_config, verify_cron_secret
+from app.services.sleeper_client import sleeper_client
 from app.models.matchup_recap import MatchupRecap
 from app.models.matchup import Matchup
 from app.models.roster import Roster
@@ -29,9 +30,7 @@ async def get_current_week_matchups(
 ):
     """Get current week matchups with predictions."""
     # Get current NFL state to determine current week
-    from app.services.sleeper_client import SleeperClient
-    client = SleeperClient()
-    nfl_state = await client.get_nfl_state()
+    nfl_state = await sleeper_client.get_nfl_state()
     current_week = nfl_state.get("week", 1)
     current_season = int(nfl_state.get("season", 2024))
     season_type = nfl_state.get("season_type", "regular")
@@ -83,9 +82,7 @@ async def get_previous_week_recaps(
 ):
     """Get previous week matchups with recaps."""
     # Get current NFL state
-    from app.services.sleeper_client import SleeperClient
-    client = SleeperClient()
-    nfl_state = await client.get_nfl_state()
+    nfl_state = await sleeper_client.get_nfl_state()
     current_week = nfl_state.get("week", 1)
     current_season = int(nfl_state.get("season", 2024))
     season_type = nfl_state.get("season_type", "regular")
@@ -189,9 +186,7 @@ async def get_week_recaps(
     """Get recaps for a specific week."""
     # Determine season
     if season is None:
-        from app.services.sleeper_client import SleeperClient
-        client = SleeperClient()
-        nfl_state = await client.get_nfl_state()
+        nfl_state = await sleeper_client.get_nfl_state()
         season = nfl_state.get("season")
 
     # Get season from database
@@ -240,9 +235,7 @@ async def get_newsletter_recaps(
     """Get recaps formatted for newsletter inclusion."""
     # Get season
     if season is None:
-        from app.services.sleeper_client import SleeperClient
-        client = SleeperClient()
-        nfl_state = await client.get_nfl_state()
+        nfl_state = await sleeper_client.get_nfl_state()
         season = nfl_state.get("season")
 
     # Get previous week recaps
@@ -296,25 +289,16 @@ async def get_newsletter_recaps(
     )
 
 
-@router.post("/matchup-recaps/regenerate/{week}")
+@router.post("/matchup-recaps/regenerate/{week}", dependencies=[Depends(verify_cron_secret)])
 async def regenerate_recaps(
     week: int,
     season: Optional[int] = None,
     force: bool = Query(False, description="Force regeneration even during offseason"),
-    authorization: str = Header(None),
     league_id: str = Depends(get_league_id),
     league_config: dict = Depends(get_league_config),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin endpoint to regenerate recaps for a week (requires CRON_SECRET)."""
-    # Verify authorization
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    token = authorization.replace("Bearer ", "")
-    if token != settings.CRON_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
     # Block if recaps are disabled for this league
     if not league_config.get("recaps_enabled", False):
         return {
@@ -325,9 +309,7 @@ async def regenerate_recaps(
         }
 
     # Get NFL state to check season status
-    from app.services.sleeper_client import SleeperClient
-    client = SleeperClient()
-    nfl_state = await client.get_nfl_state()
+    nfl_state = await sleeper_client.get_nfl_state()
     season_type = nfl_state.get("season_type", "regular")
     current_week = nfl_state.get("week", 0)
 
@@ -366,26 +348,17 @@ async def regenerate_recaps(
     }
 
 
-@router.post("/matchup-recaps/regenerate-predictions/{week}")
+@router.post("/matchup-recaps/regenerate-predictions/{week}", dependencies=[Depends(verify_cron_secret)])
 async def regenerate_predictions(
     week: int,
     season: Optional[int] = None,
     regenerate: bool = Query(True, description="Force regenerate existing predictions"),
     force: bool = Query(False, description="Force generation even during offseason"),
-    authorization: str = Header(None),
     league_id: str = Depends(get_league_id),
     league_config: dict = Depends(get_league_config),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin endpoint to regenerate predictions for upcoming week (requires CRON_SECRET)."""
-    # Verify authorization
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    token = authorization.replace("Bearer ", "")
-    if token != settings.CRON_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid credentials")
-
     # Block if recaps are disabled for this league
     if not league_config.get("recaps_enabled", False):
         return {
@@ -396,9 +369,7 @@ async def regenerate_predictions(
         }
 
     # Get NFL state to check season status
-    from app.services.sleeper_client import SleeperClient
-    client = SleeperClient()
-    nfl_state = await client.get_nfl_state()
+    nfl_state = await sleeper_client.get_nfl_state()
     season_type = nfl_state.get("season_type", "regular")
     current_week = nfl_state.get("week", 0)
 

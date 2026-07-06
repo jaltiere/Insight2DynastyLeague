@@ -95,7 +95,7 @@ A modern fantasy football dynasty league website integrating with the Sleeper pl
 
 5. **Sync data from Sleeper**
    ```bash
-   curl -X POST http://localhost:8000/api/sync/league
+   curl -X POST http://localhost:8000/api/sync/league -H "Authorization: Bearer $CRON_SECRET"
    ```
 
 6. **Access the application**
@@ -187,7 +187,7 @@ Run this once per week after games are completed to update matchup results, rost
 
 **Local development:**
 ```bash
-curl -X POST http://localhost:8000/api/sync/league
+curl -X POST http://localhost:8000/api/sync/league -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 **Production:**
@@ -218,7 +218,7 @@ When the Sleeper league rolls over to a new season (typically after the NFL draf
 
 1. **Sync current league data** — the sync automatically follows the league chain, so no config change is needed:
    ```bash
-   curl -X POST http://localhost:8000/api/sync/league
+   curl -X POST http://localhost:8000/api/sync/league -H "Authorization: Bearer $CRON_SECRET"
    ```
 
 2. **If the league ID has changed** (check Sleeper), update `SLEEPER_LEAGUE_ID` in `backend/.env`:
@@ -231,12 +231,12 @@ When the Sleeper league rolls over to a new season (typically after the NFL draf
 
    **Local:**
    ```bash
-   curl -X POST http://localhost:8000/api/sync/history
+   curl -X POST http://localhost:8000/api/sync/history -H "Authorization: Bearer $CRON_SECRET"
    ```
 
    **Production:**
    ```bash
-   curl -X POST https://api.insight2dynasty.com/api/sync/history
+   curl -X POST https://api.insight2dynasty.com/api/sync/history -H "Authorization: Bearer $CRON_SECRET"
    ```
 
    This walks the `previous_league_id` chain from the current league all the way back to the first season and syncs every season.
@@ -254,16 +254,16 @@ After initial installation, run both syncs to populate all data:
 **Local development:**
 ```bash
 # Sync current season
-curl -X POST http://localhost:8000/api/sync/league
+curl -X POST http://localhost:8000/api/sync/league -H "Authorization: Bearer $CRON_SECRET"
 
 # Sync all historical seasons
-curl -X POST http://localhost:8000/api/sync/history
+curl -X POST http://localhost:8000/api/sync/history -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 **Production (after Railway deployment):**
 ```bash
 # Sync all historical seasons (includes current season)
-curl -X POST https://api.insight2dynasty.com/api/sync/history
+curl -X POST https://api.insight2dynasty.com/api/sync/history -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ## Deployment

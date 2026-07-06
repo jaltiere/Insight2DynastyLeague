@@ -9,17 +9,17 @@ Provides roster-aware trade evaluation data:
   POST /trade-calculator/refresh                  — manual KTC refresh (CRON_SECRET auth)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, or_, func
 
 from app.database import get_db
-from app.api.deps import get_league_id
+from app.api.deps import get_league_id, verify_cron_secret
 from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup, League
 from app.models.player_value import PlayerValue
 from app.config import get_settings
 from app.services.ktc_service import refresh_ktc_values
-from app.services.sleeper_client import SleeperClient
+from app.services.sleeper_client import sleeper_client
 from app.api.routes.power_rankings import _calculate_player_stats
 
 router = APIRouter()
@@ -423,10 +423,8 @@ async def get_roster_picks(
             return "late"
 
     # ── 3. Fetch live traded picks from Sleeper ────────────────────────────
-    settings = get_settings()
-    client = SleeperClient()
     try:
-        traded_raw = await client.get_traded_picks()
+        traded_raw = await sleeper_client.get_traded_picks(league_id)
     except Exception:
         traded_raw = []
 
@@ -455,7 +453,7 @@ async def get_roster_picks(
     # ── 5. Determine number of rounds from upcoming draft ──────────────────
     # Use the most recent pre_draft/complete draft round count, fallback to 4
     try:
-        drafts_raw = await client.get_drafts()
+        drafts_raw = await sleeper_client.get_drafts(league_id)
         num_rounds = 4
         for draft in drafts_raw:
             if draft.get("status") in ("pre_draft", "drafting"):
@@ -629,16 +627,11 @@ async def get_h2h_trade_history(
     return {"trades": trades_out, "summary": summary}
 
 
-@router.post("/trade-calculator/refresh")
+@router.post("/trade-calculator/refresh", dependencies=[Depends(verify_cron_secret)])
 async def refresh_values(
-    authorization: str = Header(...),
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a KTC value refresh. Requires CRON_SECRET bearer token."""
     settings = get_settings()
-    expected = f"Bearer {settings.CRON_SECRET}"
-    if authorization != expected:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
     result = await refresh_ktc_values(db, scoring_format=settings.KTC_SCORING_FORMAT)
     return result
