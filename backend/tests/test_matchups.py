@@ -99,3 +99,28 @@ async def test_head_to_head_points_calculation(client, db_session):
     assert data["user2"]["total_points"] == 200.0
     assert data["user1"]["avg_points"] == 110.0
     assert data["user2"]["avg_points"] == 100.0
+
+
+async def test_head_to_head_ignores_unplayed_matchups(client, db_session):
+    """Offseason-synced 0-0 matchups must not appear as H2H ties or games."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", display_name="Bob")
+    r1 = await create_roster(db_session, season, u1, roster_id=1)
+    r2 = await create_roster(db_session, season, u2, roster_id=2)
+
+    await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1,
+                         home_points=120.0, away_points=100.0)
+    for week in (2, 3, 4):
+        await create_matchup(db_session, season, r1, r2, week=week, matchup_id=1,
+                             home_points=0, away_points=0, winner_roster_id=None)
+
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head/u1/u2")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_games"] == 1
+    assert data["user1"]["wins"] == 1
+    assert data["user1"]["ties"] == 0
+    # Averages are over played games only
+    assert data["user1"]["avg_points"] == 120.0

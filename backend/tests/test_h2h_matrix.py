@@ -254,3 +254,31 @@ async def test_h2h_matrix_response_has_all_fields(client, db_session):
     assert "wins" in median
     assert "losses" in median
     assert "ties" in median
+
+
+async def test_h2h_matrix_ignores_unplayed_matchups(client, db_session):
+    """Offseason-synced 0-0 matchups must not count as H2H ties or median games."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", display_name="Bob")
+    r1 = await create_roster(db_session, season, u1, roster_id=1)
+    r2 = await create_roster(db_session, season, u2, roster_id=2)
+
+    # One played game, then three unplayed future weeks synced as 0-0
+    await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1,
+                         home_points=120.0, away_points=100.0)
+    for week in (2, 3, 4):
+        await create_matchup(db_session, season, r1, r2, week=week, matchup_id=1,
+                             home_points=0, away_points=0, winner_roster_id=None)
+
+    response = await client.get(f"{LEAGUE_PREFIX}/matchups/head-to-head-matrix")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["matrix"]["u1"]["u2"] == {"wins": 1, "losses": 0, "ties": 0}
+    # Median records only reflect the one played week (no phantom ties)
+    for user_id in ("u1", "u2"):
+        record = data["median_records"].get(user_id, {"wins": 0, "losses": 0, "ties": 0})
+        assert record["ties"] == 0
+        assert record["wins"] + record["losses"] <= 1
