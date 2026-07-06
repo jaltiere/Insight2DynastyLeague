@@ -59,8 +59,29 @@ async def test_standings_win_percentage_with_ties(client, db_session):
     response = await client.get(f"{LEAGUE_PREFIX}/standings")
     assert response.status_code == 200
     standing = response.json()["standings"][0]
-    # 7 / (7 + 6 + 1) = 0.5
-    assert standing["win_percentage"] == 0.5
+    # Ties count as half a win: (7 + 0.5) / (7 + 6 + 1) = 0.536
+    assert standing["win_percentage"] == 0.536
+
+
+async def test_standings_include_ownerless_roster(client, db_session):
+    """A roster with no owner (user_id NULL) still appears in standings."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    user1 = await create_user(db_session, id="u1", display_name="Owner One")
+    user2 = await create_user(db_session, id="u2", display_name="Orphan Owner")
+    await create_roster(db_session, season, user1, roster_id=1, wins=10, losses=4)
+    await create_roster(
+        db_session, season, user2, roster_id=2,
+        user_id=None, team_name="Orphan FC", wins=8, losses=6,
+    )
+
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_teams"] == 2
+    orphan = next(s for s in data["standings"] if s["roster_id"] == 2)
+    assert orphan["user_id"] is None
+    assert orphan["display_name"] == "Orphan FC"
 
 
 async def test_standings_response_has_all_fields(client, db_session):

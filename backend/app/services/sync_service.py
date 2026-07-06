@@ -152,7 +152,7 @@ class SyncService:
         try:
             # Get current NFL state
             nfl_state = await self.client.get_nfl_state()
-            current_season = nfl_state.get("season")
+            current_season = int(nfl_state.get("season"))
 
             # Sync league info
             league_data = await self.client.get_league(self._league_id)
@@ -215,7 +215,7 @@ class SyncService:
                             from app.api.routes.power_rankings import _save_snapshot
                             completed_week = current_week - 1
                             logger.info(f"Tuesday sync: saving power ranking snapshot for week {completed_week}")
-                            await _save_snapshot(self.db, int(current_season), completed_week, league_id=self._league_id)
+                            await _save_snapshot(self.db, current_season, completed_week, league_id=self._league_id)
                         except Exception as snap_err:
                             logger.warning(f"Power ranking snapshot failed (non-fatal): {snap_err}")
 
@@ -231,7 +231,7 @@ class SyncService:
                     logger.warning(f"Season object not found for year {current_season}, skipping recap generation")
 
             # Sync players FIRST (before drafts that reference them by FK)
-            await self._sync_players(int(current_season))
+            await self._sync_players(current_season)
 
             # Sync drafts
             drafts_data = await self.client.get_drafts(self._league_id)
@@ -243,13 +243,13 @@ class SyncService:
             # Sync season awards from bracket data (completed seasons only)
             if league_data.get("status") == "complete":
                 await self._sync_season_awards(
-                    league_data.get("league_id"), int(current_season)
+                    league_data.get("league_id"), current_season
                 )
 
             # Sync transactions (use same weeks_to_sync logic)
             await self._sync_transactions(
                 league_data.get("league_id"),
-                int(current_season),
+                current_season,
                 weeks_to_sync
             )
 
@@ -625,16 +625,17 @@ class SyncService:
         if not players_points:
             return
 
-        for player_id, points in players_points.items():
-            # Check for existing record
-            result = await self.db.execute(
-                select(MatchupPlayerPoint).where(
-                    MatchupPlayerPoint.matchup_id == matchup.id,
-                    MatchupPlayerPoint.roster_id == roster.id,
-                    MatchupPlayerPoint.player_id == str(player_id)
-                )
+        # Preload this team's existing rows in one query instead of one per player
+        result = await self.db.execute(
+            select(MatchupPlayerPoint).where(
+                MatchupPlayerPoint.matchup_id == matchup.id,
+                MatchupPlayerPoint.roster_id == roster.id,
             )
-            existing = result.scalar_one_or_none()
+        )
+        existing_points = {mpp.player_id: mpp for mpp in result.scalars()}
+
+        for player_id, points in players_points.items():
+            existing = existing_points.get(str(player_id))
 
             if existing:
                 existing.points = points or 0.0
@@ -793,14 +794,15 @@ class SyncService:
 
         players_data = await self.client.get_all_players()
 
+        # Preload all existing players in one query instead of one per player
+        result = await self.db.execute(select(Player))
+        existing_players = {p.id: p for p in result.scalars()}
+
         count = 0
         for player_id, player_data in players_data.items():
             # Only sync active players to reduce database size
             if player_data.get("active", False):
-                result = await self.db.execute(
-                    select(Player).where(Player.id == player_id)
-                )
-                player = result.scalar_one_or_none()
+                player = existing_players.get(player_id)
 
                 full_name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
 

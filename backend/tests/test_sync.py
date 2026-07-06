@@ -65,7 +65,7 @@ async def test_sync_league_success(client):
     data = response.json()
     assert len(data["leagues"]) == 1
     assert data["leagues"][0]["status"] == "success"
-    assert data["leagues"][0]["season"] == "2024"
+    assert data["leagues"][0]["season"] == 2024
     assert data["errors"] == []
 
 
@@ -130,7 +130,7 @@ async def test_sync_offseason_transactions(client):
     assert response.status_code == 200
     data = response.json()
     assert data["leagues"][0]["status"] == "success"
-    assert data["leagues"][0]["season"] == "2026"
+    assert data["leagues"][0]["season"] == 2026
 
     # Verify that get_transactions was called for weeks 1, 2, and 3
     # (not just week 0 or week 1)

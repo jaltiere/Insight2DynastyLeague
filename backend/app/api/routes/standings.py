@@ -63,10 +63,11 @@ async def _get_season_standings(db: AsyncSession, year: int, league_id: str) -> 
     for i in range(1, (season.num_divisions or 2) + 1):
         division_names[str(i)] = league_metadata.get(f"division_{i}", f"Division {i}")
 
-    # Get all rosters for this season with user info
+    # Get all rosters for this season with user info. Outer join: a roster
+    # can be ownerless (user_id NULL) and must still appear in standings.
     result = await db.execute(
         select(Roster, User)
-        .join(User, Roster.user_id == User.id)
+        .outerjoin(User, Roster.user_id == User.id)
         .where(Roster.season_id == season.id)
         .order_by(desc(Roster.wins), desc(Roster.points_for))
     )
@@ -87,11 +88,14 @@ async def _get_season_standings(db: AsyncSession, year: int, league_id: str) -> 
         median = median_records.get(roster.id, {"wins": 0, "losses": 0, "ties": 0})
         max_potential = max_potential_stats.get(roster.id, {"max_potential": 0.0, "points_left_on_bench": 0.0})
 
+        owner_name = (user.display_name or user.username) if user else (roster.team_name or "Unknown Team")
+        games = max(roster.wins + roster.losses + roster.ties, 1)
+
         standings.append({
             "roster_id": roster.roster_id,
-            "user_id": user.id,
-            "username": user.display_name or user.username,
-            "display_name": user.display_name or user.username,
+            "user_id": user.id if user else None,
+            "username": owner_name,
+            "display_name": owner_name,
             "team_name": roster.team_name,
             "division": roster.division,
             "wins": roster.wins,
@@ -99,7 +103,8 @@ async def _get_season_standings(db: AsyncSession, year: int, league_id: str) -> 
             "ties": roster.ties,
             "points_for": roster.points_for,
             "points_against": roster.points_against,
-            "win_percentage": round(roster.wins / max(roster.wins + roster.losses + roster.ties, 1), 3),
+            # Ties count as half a win, the standard record convention
+            "win_percentage": round((roster.wins + 0.5 * roster.ties) / games, 3),
             "median_wins": median["wins"],
             "median_losses": median["losses"],
             "median_ties": median["ties"],

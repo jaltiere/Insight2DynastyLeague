@@ -634,4 +634,7 @@ async def refresh_values(
     """Manually trigger a KTC value refresh. Requires CRON_SECRET bearer token."""
     settings = get_settings()
     result = await refresh_ktc_values(db, scoring_format=settings.KTC_SCORING_FORMAT)
+    # refresh_ktc_values only flushes (sync_league owns the commit when it
+    # calls the service); as a standalone endpoint we commit here.
+    await db.commit()
     return result

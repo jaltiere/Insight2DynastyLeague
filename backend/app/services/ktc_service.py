@@ -179,6 +179,11 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
     result = await db.execute(select(Player.id, Player.full_name, Player.position))
     by_name_pos, by_name = _build_player_lookup(result.all())
 
+    # Preload all existing value rows in one query instead of one per entry
+    existing_rows = (await db.execute(select(PlayerValue))).scalars().all()
+    values_by_pick_key = {r.pick_key: r for r in existing_rows if r.pick_key}
+    values_by_player_id = {r.player_id: r for r in existing_rows if r.player_id}
+
     now = utcnow()
     updated = 0
     skipped_no_match = 0
@@ -202,10 +207,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 logger.debug("Could not parse pick key for: %s", ktc_name)
                 continue
 
-            existing = await db.execute(
-                select(PlayerValue).where(PlayerValue.pick_key == pick_key)
-            )
-            row = existing.scalar_one_or_none()
+            row = values_by_pick_key.get(pick_key)
             if row:
                 row.ktc_name = ktc_name
                 row.value = value
@@ -238,10 +240,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 logger.debug("No DB match for KTC player: %s (%s)", ktc_name, position)
                 continue
 
-            existing = await db.execute(
-                select(PlayerValue).where(PlayerValue.player_id == player_id)
-            )
-            row = existing.scalar_one_or_none()
+            row = values_by_player_id.get(player_id)
             if row:
                 row.ktc_name = ktc_name
                 row.value = value
@@ -269,7 +268,9 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 ))
             updated += 1
 
-    await db.commit()
+    # Flush, don't commit: sync_league calls this mid-transaction and owns the
+    # commit; committing here would persist a partially synced state.
+    await db.flush()
 
     summary = {
         "status": "ok",
