@@ -14,16 +14,21 @@ export function setCurrentLeagueSlug(slug: string) {
   _leagueSlug = slug;
 }
 
+// Abort requests that hang instead of spinning forever in the UI
+const REQUEST_TIMEOUT_MS = 30000;
+
 // Global client — no league prefix (players, leagues list, sync)
 const globalApiClient = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 // League-scoped client — automatically prefixes /{slug}/ to every request URL
 const apiClient = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 apiClient.interceptors.request.use((config) => {

@@ -187,7 +187,7 @@ async def get_week_recaps(
     # Determine season
     if season is None:
         nfl_state = await sleeper_client.get_nfl_state()
-        season = nfl_state.get("season")
+        season = int(nfl_state.get("season"))
 
     # Get season from database
     result = await db.execute(
@@ -236,7 +236,7 @@ async def get_newsletter_recaps(
     # Get season
     if season is None:
         nfl_state = await sleeper_client.get_nfl_state()
-        season = nfl_state.get("season")
+        season = int(nfl_state.get("season"))
 
     # Get previous week recaps
     previous_week_result = await db.execute(
@@ -324,7 +324,7 @@ async def regenerate_recaps(
 
     # Get season
     if season is None:
-        season = nfl_state.get("season")
+        season = int(nfl_state.get("season"))
 
     result = await db.execute(
         select(Season)
@@ -384,7 +384,7 @@ async def regenerate_predictions(
 
     # Get season
     if season is None:
-        season = nfl_state.get("season")
+        season = int(nfl_state.get("season"))
 
     result = await db.execute(
         select(Season)
