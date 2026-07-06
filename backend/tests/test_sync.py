@@ -298,3 +298,37 @@ async def test_cron_sync_with_valid_auth(client):
         response = await client.post("/api/cron/sync", headers=_AUTH)
     assert response.status_code == 200
     assert response.json()["status"] == "success"
+
+
+async def test_sync_stores_bracket_placement(client, db_session):
+    """Playoff-week matchups get bracket_placement from Sleeper bracket data."""
+    mock = _make_mock_sleeper_client()
+    mock.get_nfl_state.return_value = {"season": "2024", "week": 15, "season_type": "regular"}
+    mock.get_rosters.return_value = [
+        {
+            "roster_id": rid, "owner_id": "u1", "players": [], "starters": [],
+            "reserve": [], "taxi": [],
+            "settings": {"wins": 0, "losses": 0, "ties": 0, "fpts": 0, "fpts_against": 0, "division": 1},
+        }
+        for rid in (1, 2)
+    ]
+    mock.get_matchups.return_value = [
+        {"roster_id": 1, "matchup_id": 1, "points": 100.0, "players_points": {}, "starters": []},
+        {"roster_id": 2, "matchup_id": 1, "points": 90.0, "players_points": {}, "starters": []},
+    ]
+    # Championship game (p=1) between rosters 1 and 2 in bracket round 1
+    mock.get_winners_bracket.return_value = [{"r": 1, "m": 1, "t1": 1, "t2": 2, "w": None, "l": None, "p": 1}]
+    mock.get_losers_bracket.return_value = []
+
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/sync/league", headers=_AUTH)
+
+    assert response.status_code == 200
+    result = await db_session.execute(select(Matchup).where(Matchup.week == 15))
+    playoff_matchup = result.scalars().one()
+    assert playoff_matchup.match_type == "playoff"
+    assert playoff_matchup.bracket_placement == 1
+    # Regular-season weeks carry no placement
+    result = await db_session.execute(select(Matchup).where(Matchup.week == 1))
+    assert result.scalars().one().bracket_placement is None

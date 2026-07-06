@@ -10,6 +10,8 @@ from app.models.matchup import Matchup
 from app.models.roster import Roster
 from app.models.user import User
 from app.models.season import Season
+from app.models.league import League
+from app.utils import ordinal
 from app.schemas.matchup_recap import (
     MatchupRecapResponse,
     WeekRecapsResponse,
@@ -468,19 +470,9 @@ async def _build_matchup_recap_response(
 
     # Add playoff bracket information
     metadata['match_type'] = matchup.match_type
-    if matchup.week >= 17:
-        # Determine playoff bracket position based on match_type and matchup_id
-        if matchup.match_type == 'playoff':
-            if matchup.matchup_id == 1:
-                metadata['bracket_label'] = '🏆 Championship'
-            elif matchup.matchup_id == 2:
-                metadata['bracket_label'] = '🥉 3rd Place'
-        elif matchup.match_type == 'consolation':
-            # Consolation games have higher matchup_ids (4, 5, etc.)
-            if matchup.matchup_id == 4:
-                metadata['bracket_label'] = '🎖️ Consolation Championship'
-            elif matchup.matchup_id == 5:
-                metadata['bracket_label'] = '🎯 9th Place'
+    bracket_label = await _bracket_label(matchup, db)
+    if bracket_label:
+        metadata['bracket_label'] = bracket_label
 
     return MatchupRecapResponse(
         matchup_id=matchup.id,
@@ -496,3 +488,52 @@ async def _build_matchup_recap_response(
         recap_metadata=metadata,
         generated_at=recap.generated_at if recap else None
     )
+
+
+async def _bracket_label(matchup: Matchup, db: AsyncSession) -> Optional[str]:
+    """Label bracket placement games from Sleeper's bracket data.
+
+    bracket_placement is Sleeper's p field within its bracket (1 = final,
+    3 = 3rd place game, ...). Falls back to the legacy matchup-id layout for
+    rows synced before the column existed.
+    """
+    placement = matchup.bracket_placement
+    if placement:
+        if matchup.match_type == 'playoff':
+            if placement == 1:
+                return '🏆 Championship'
+            if placement == 3:
+                return '🥉 3rd Place'
+            return f'🎯 {ordinal(placement)} Place'
+        if matchup.match_type == 'consolation':
+            if placement == 1:
+                return '🎖️ Consolation Championship'
+            # Overall finish contested = playoff team count + bracket placement
+            overall = await _playoff_team_count(db, matchup.season_id) + placement
+            return f'🎯 {ordinal(overall)} Place'
+        return None
+
+    # Legacy fallback: pre-backfill rows use the historical bracket layout
+    if matchup.week >= 17:
+        if matchup.match_type == 'playoff':
+            if matchup.matchup_id == 1:
+                return '🏆 Championship'
+            if matchup.matchup_id == 2:
+                return '🥉 3rd Place'
+        elif matchup.match_type == 'consolation':
+            if matchup.matchup_id == 4:
+                return '🎖️ Consolation Championship'
+            if matchup.matchup_id == 5:
+                return '🎯 9th Place'
+    return None
+
+
+async def _playoff_team_count(db: AsyncSession, season_id: int) -> int:
+    """Playoff team count from league settings (Sleeper default: 6)."""
+    result = await db.execute(
+        select(League.settings)
+        .join(Season, Season.league_id == League.id)
+        .where(Season.id == season_id)
+    )
+    league_settings = result.scalar_one_or_none() or {}
+    return int(league_settings.get("playoff_teams") or 6)

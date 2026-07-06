@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional, Tuple
-from app.utils import utcnow
+from app.utils import utcnow, ordinal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from anthropic import AsyncAnthropic
@@ -791,29 +791,40 @@ Write 2-3 sentences: predict the winner based on the data provided, highlight wh
             return None
 
     async def _get_bracket_label(self, matchup: Matchup) -> str:
-        """Get human-readable bracket label for playoff matchups."""
-        # Regular season games
-        if matchup.week < 15:
-            return f"Week {matchup.week} regular season"
+        """Get human-readable bracket label for playoff matchups.
 
-        # Playoff games (weeks 15-18)
+        Prefers Sleeper's bracket placement data (matchup.bracket_placement:
+        1 = final, 3 = 3rd place game within its bracket); falls back to the
+        legacy matchup-id layout for rows synced before that column existed.
+        """
         if matchup.match_type == "playoff":
-            # Championship bracket (top 6 teams - places 1-6)
+            placement = matchup.bracket_placement
+            if placement == 1:
+                return "Championship game (1st place)"
+            if placement == 3:
+                return "3rd place game (playoff bracket)"
+            if placement:
+                return f"{ordinal(placement)} place game (playoff bracket)"
+            # Legacy fallback
             if matchup.matchup_id == 1:
                 return "Championship game (1st place)"
-            elif matchup.matchup_id == 2:
+            if matchup.matchup_id == 2:
                 return "3rd place game (playoff bracket)"
-            elif matchup.week == 15:
+            if matchup.week == 15:
                 return "Playoff semifinal"
-            else:
-                return "Playoff game"
-        elif matchup.match_type == "consolation":
-            # Consolation bracket (teams 7-12 - playing for best of the rest)
+            return "Playoff game"
+
+        if matchup.match_type == "consolation":
+            placement = matchup.bracket_placement
+            if placement == 1:
+                return "Consolation championship (best of the non-playoff teams)"
+            if placement:
+                return f"Consolation placement game ({ordinal(placement)} in consolation bracket)"
+            # Legacy fallback
             if matchup.matchup_id == 4:
                 return "Consolation championship (7th place game)"
-            elif matchup.matchup_id == 5:
+            if matchup.matchup_id == 5:
                 return "9th place game (consolation bracket)"
-            else:
-                return "Consolation playoff game"
-        else:
-            return f"Week {matchup.week} matchup"
+            return "Consolation playoff game"
+
+        return f"Week {matchup.week} regular season"
