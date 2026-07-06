@@ -2,7 +2,7 @@
 # root_dir=backend, so this file must live in backend/
 
 [phases.setup]
-nixPkgs = ["python311", "gcc", "libmysqlclient"]
+nixPkgs = ["python313", "gcc", "libmysqlclient"]
 
 [start]
 cmd = ". /opt/venv/bin/activate && python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"

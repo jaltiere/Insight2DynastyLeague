@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import unicodedata
-from datetime import datetime
+from app.utils import utcnow
 from typing import Optional
 
 import httpx
@@ -147,7 +147,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
         if full_name:
             name_to_id[_normalize_name(full_name)] = pid
 
-    now = datetime.utcnow()
+    now = utcnow()
     updated = 0
     skipped_no_match = 0
     picks_updated = 0

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from app.utils import utcnow
 from app.database import Base
 
 
@@ -14,7 +14,7 @@ class User(Base):
     display_name = Column(String(255))
     avatar = Column(String(255))  # Avatar ID from Sleeper
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     rosters = relationship("Roster", back_populates="user", cascade="all, delete-orphan")

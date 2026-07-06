@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from app.utils import utcnow
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from anthropic import AsyncAnthropic
@@ -491,7 +491,7 @@ Write 2-3 sentences: predict the winner based on the data provided, highlight wh
                 if predictions_text:
                     existing_recap.predictions_text = predictions_text
                 existing_recap.recap_metadata = metadata
-                existing_recap.generated_at = datetime.utcnow()
+                existing_recap.generated_at = utcnow()
                 return
 
         # Create new recap

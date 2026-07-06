@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, BigInteger, JSON, DateTime, ForeignKey
-from datetime import datetime
+from app.utils import utcnow
 from app.database import Base
 
 
@@ -26,7 +26,7 @@ class Transaction(Base):
     metadata_notes = Column(String(500), nullable=True)  # Failure reason or notes
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     def __repr__(self):
         return f"<Transaction {self.type} - Week {self.week}>"

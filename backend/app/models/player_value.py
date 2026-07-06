@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, UniqueConstraint
-from datetime import datetime
+from app.utils import utcnow
 from app.database import Base
 
 
@@ -39,7 +39,7 @@ class PlayerValue(Base):
     team = Column(String(10), nullable=True)
     age = Column(String(10), nullable=True)  # stored as string to handle 0.0 for picks
 
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (
         UniqueConstraint("player_id", name="uq_player_values_player_id"),

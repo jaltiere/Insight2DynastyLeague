@@ -7,7 +7,7 @@ from app.models import (
     SeasonAward, MatchupPlayerPoint
 )
 from typing import Dict, Any, List
-from datetime import datetime
+from app.utils import utcnow, utcfromtimestamp_ms
 import logging
 
 logger = logging.getLogger(__name__)
@@ -725,7 +725,7 @@ class SyncService:
 
             # Extract start_time (Sleeper returns ms epoch)
             raw_start = draft_data.get("start_time") or draft_detail.get("start_time")
-            start_time = datetime.utcfromtimestamp(raw_start / 1000) if raw_start else None
+            start_time = utcfromtimestamp_ms(raw_start) if raw_start else None
 
             result = await self.db.execute(
                 select(Draft).where(Draft.id == draft_id)
@@ -1066,12 +1066,10 @@ class SyncService:
         return None
 
     def _is_tuesday(self) -> bool:
-        """Check if today is Tuesday."""
-        from datetime import datetime
-        return datetime.now().weekday() == 1  # Monday is 0, Tuesday is 1
+        """Check if today is Tuesday in UTC (matches the cron schedules)."""
+        return utcnow().weekday() == 1  # Monday is 0, Tuesday is 1
 
     def _is_thursday(self) -> bool:
-        """Check if today is Thursday."""
-        from datetime import datetime
-        return datetime.now().weekday() == 3  # Thursday is 3
+        """Check if today is Thursday in UTC (matches the cron schedules)."""
+        return utcnow().weekday() == 3  # Thursday is 3
 
