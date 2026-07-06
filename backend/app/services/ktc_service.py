@@ -73,6 +73,42 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.split())
 
 
+def _build_player_lookup(db_players) -> tuple[dict, dict]:
+    """Build lookups from (id, full_name, position) rows.
+
+    Returns (by_name_pos, by_name): an exact (normalized_name, position) map,
+    and a normalized_name -> [ids] map for the unambiguous-name fallback.
+    """
+    by_name_pos: dict[tuple[str, str], str] = {}
+    by_name: dict[str, list[str]] = {}
+    for pid, full_name, position in db_players:
+        if not full_name:
+            continue
+        norm = _normalize_name(full_name)
+        if position:
+            by_name_pos[(norm, position)] = pid
+        by_name.setdefault(norm, []).append(pid)
+    return by_name_pos, by_name
+
+
+def _match_player_id(by_name_pos: dict, by_name: dict,
+                     ktc_name: str, position: str) -> Optional[str]:
+    """Match a KTC entry to a Player id by name AND position.
+
+    Same-named players exist in the NFL (two Josh Allens, two Lamar
+    Jacksons); a name-only match can attach a star's value to the wrong
+    player. Fall back to name-only just when that name is unambiguous.
+    """
+    norm = _normalize_name(ktc_name)
+    player_id = by_name_pos.get((norm, position))
+    if player_id:
+        return player_id
+    candidates = by_name.get(norm) or []
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
 def _parse_pick_key(ktc_name: str) -> Optional[str]:
     """Convert "2026 Early 1st" → "2026_1_early". Returns None if unparseable."""
     # Expected format: "{year} {Tier} {Ordinal}"
@@ -139,13 +175,9 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
         logger.error("Failed to parse KTC playersArray: %s", exc)
         return {"status": "error", "error": str(exc)}
 
-    # Build a normalized-name → Player.id lookup from our DB
+    # Build normalized-name/position → Player.id lookups from our DB
     result = await db.execute(select(Player.id, Player.full_name, Player.position))
-    db_players = result.all()
-    name_to_id: dict[str, str] = {}
-    for pid, full_name, _ in db_players:
-        if full_name:
-            name_to_id[_normalize_name(full_name)] = pid
+    by_name_pos, by_name = _build_player_lookup(result.all())
 
     now = utcnow()
     updated = 0
@@ -198,14 +230,12 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
             picks_updated += 1
 
         else:
-            # Regular player entry — match by normalized name
-            norm = _normalize_name(ktc_name)
-            player_id = name_to_id.get(norm)
+            # Regular player entry — match by normalized name and position
+            player_id = _match_player_id(by_name_pos, by_name, ktc_name, position)
 
             if not player_id:
-                # Try last-name-only match as fallback (less reliable, skip for now)
                 skipped_no_match += 1
-                logger.debug("No DB match for KTC player: %s", ktc_name)
+                logger.debug("No DB match for KTC player: %s (%s)", ktc_name, position)
                 continue
 
             existing = await db.execute(

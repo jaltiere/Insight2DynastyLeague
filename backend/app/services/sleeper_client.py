@@ -1,8 +1,14 @@
+import time
+
 import httpx
 from typing import Optional, List, Dict, Any
 from app.config import get_settings
 
 settings = get_settings()
+
+# How long a fetched NFL state stays fresh. Read endpoints call it on every
+# request; without a cache each page load pays a round trip to Sleeper.
+NFL_STATE_TTL_SECONDS = 60.0
 
 
 class SleeperClient:
@@ -12,6 +18,8 @@ class SleeperClient:
         self.base_url = settings.SLEEPER_BASE_URL
         self.league_id = settings.SLEEPER_LEAGUE_ID
         self.client = httpx.AsyncClient(timeout=30.0)
+        self._nfl_state_cache: Optional[Dict[str, Any]] = None
+        self._nfl_state_cached_at = 0.0
 
     async def close(self):
         """Close the HTTP client."""
@@ -99,10 +107,19 @@ class SleeperClient:
         return response.json()
 
     async def get_nfl_state(self) -> Dict[str, Any]:
-        """Get current NFL season state."""
+        """Get current NFL season state (cached for NFL_STATE_TTL_SECONDS)."""
+        now = time.monotonic()
+        if (
+            self._nfl_state_cache is not None
+            and now - self._nfl_state_cached_at < NFL_STATE_TTL_SECONDS
+        ):
+            return self._nfl_state_cache
+
         response = await self.client.get(f"{self.base_url}/state/nfl")
         response.raise_for_status()
-        return response.json()
+        self._nfl_state_cache = response.json()
+        self._nfl_state_cached_at = now
+        return self._nfl_state_cache
 
 
 # Singleton instance
