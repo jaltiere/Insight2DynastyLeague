@@ -524,7 +524,7 @@ async def get_h2h_trade_history(
     """Return the trade history between two specific owners, graded."""
     from app.services.trade_grading import TradeGradingService
 
-    svc = TradeGradingService(db)
+    svc = TradeGradingService(db, league_id=league_id)
     all_trades = await svc.grade_all_trades()
 
     # Filter to trades involving BOTH owners
