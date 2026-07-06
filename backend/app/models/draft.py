@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from app.utils import utcnow
 from app.database import Base
 
 
@@ -24,7 +24,7 @@ class Draft(Base):
 
     # Timestamps
     start_time = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # Relationships
     season = relationship("Season", back_populates="drafts")

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, JSON, DateTime
-from datetime import datetime
+from app.utils import utcnow
 from app.database import Base
 
 
@@ -32,7 +32,7 @@ class Player(Base):
     stats = Column(JSON)  # Career/season stats
 
     # Metadata
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     def __repr__(self):
         return f"<Player {self.full_name} ({self.position} - {self.team})>"
