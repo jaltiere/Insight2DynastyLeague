@@ -416,24 +416,33 @@ async def _build_matchup_recap_response(
     db: AsyncSession
 ) -> MatchupRecapResponse:
     """Build a MatchupRecapResponse from a matchup and its recap."""
-    # Get rosters and users
-    home_roster_result = await db.execute(
-        select(Roster).where(Roster.id == matchup.home_roster_id)
-    )
-    away_roster_result = await db.execute(
-        select(Roster).where(Roster.id == matchup.away_roster_id)
-    )
-    home_roster = home_roster_result.scalar_one()
-    away_roster = away_roster_result.scalar_one()
 
-    home_user_result = await db.execute(
-        select(User).where(User.id == home_roster.user_id)
-    )
-    away_user_result = await db.execute(
-        select(User).where(User.id == away_roster.user_id)
-    )
-    home_user = home_user_result.scalar_one()
-    away_user = away_user_result.scalar_one()
+    async def _team_name(roster_db_id: int) -> str:
+        """Resolve a display name, tolerating missing rosters/owners.
+
+        Sleeper allows ownerless rosters (user_id NULL), so a strict
+        scalar_one() here would 500 the whole recap page.
+        """
+        roster_result = await db.execute(
+            select(Roster).where(Roster.id == roster_db_id)
+        )
+        roster = roster_result.scalar_one_or_none()
+        if not roster:
+            return "Unknown Team"
+
+        user = None
+        if roster.user_id:
+            user_result = await db.execute(
+                select(User).where(User.id == roster.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+
+        if user:
+            return user.display_name or user.username
+        return roster.team_name or "Unknown Team"
+
+    home_team = await _team_name(matchup.home_roster_id)
+    away_team = await _team_name(matchup.away_roster_id)
 
     # Get recap
     recap_result = await db.execute(
@@ -477,8 +486,8 @@ async def _build_matchup_recap_response(
         matchup_id=matchup.id,
         week=matchup.week,
         season=season_year,
-        home_team=home_user.display_name or home_user.username,
-        away_team=away_user.display_name or away_user.username,
+        home_team=home_team,
+        away_team=away_team,
         home_score=matchup.home_points,
         away_score=matchup.away_points,
         recap_text=recap.recap_text if recap else None,
