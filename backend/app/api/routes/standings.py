@@ -148,6 +148,10 @@ async def _calculate_median_records(db: AsyncSession, season_id: int) -> Dict[in
         if len(scores) < 2:
             continue
         all_points = [s[1] for s in scores]
+        # Skip unplayed weeks: the offseason sync stores future matchups with
+        # 0-0 scores, which would otherwise count as a median tie for everyone.
+        if max(all_points) == 0:
+            continue
         week_median = calc_median(all_points)
         for roster_id, pts in scores:
             if pts > week_median:
