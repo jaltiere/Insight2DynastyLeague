@@ -469,8 +469,10 @@ class SyncService:
         # Fetch bracket data if we're syncing playoff weeks
         playoff_roster_ids = set()
         consolation_roster_ids = set()
+        bracket_placements = {}
         if last_week > season.regular_season_weeks:
-            playoff_roster_ids, consolation_roster_ids = await self._get_bracket_roster_ids(league_id)
+            playoff_roster_ids, consolation_roster_ids, bracket_placements = \
+                await self._get_bracket_data(league_id)
 
         for week in range(1, last_week + 1):
             if week <= season.regular_season_weeks:
@@ -481,43 +483,54 @@ class SyncService:
             matchups_data = await self.client.get_matchups(week, league_id)
             await self._process_week_matchups(
                 matchups_data, season.id, week, match_type,
-                playoff_roster_ids, consolation_roster_ids
+                playoff_roster_ids, consolation_roster_ids,
+                bracket_placements=bracket_placements,
+                regular_season_weeks=season.regular_season_weeks,
             )
 
         logger.info(f"Synced matchups for {year} weeks 1-{last_week}")
 
-    async def _get_bracket_roster_ids(self, league_id: str = None):
-        """Fetch bracket data and return sets of roster IDs for playoff vs consolation."""
+    async def _get_bracket_data(self, league_id: str = None):
+        """Fetch bracket data from Sleeper.
+
+        Returns (playoff_roster_ids, consolation_roster_ids, placements) where
+        placements maps (round, frozenset({t1, t2})) -> the bracket's placement
+        field p (1 = championship game, 3 = 3rd place game, ...). Only
+        placement games carry p; advancement games are absent from the map.
+        """
         playoff_roster_ids = set()
         consolation_roster_ids = set()
+        placements: Dict[tuple, int] = {}
+
+        def _collect(bracket, roster_ids: set):
+            for entry in bracket:
+                t1, t2 = entry.get("t1"), entry.get("t2")
+                if t1:
+                    roster_ids.add(t1)
+                if t2:
+                    roster_ids.add(t2)
+                if t1 and t2 and entry.get("p") and entry.get("r"):
+                    placements[(entry["r"], frozenset((t1, t2)))] = entry["p"]
 
         try:
-            winners_bracket = await self.client.get_winners_bracket(league_id)
-            for entry in winners_bracket:
-                if entry.get("t1"):
-                    playoff_roster_ids.add(entry["t1"])
-                if entry.get("t2"):
-                    playoff_roster_ids.add(entry["t2"])
+            _collect(await self.client.get_winners_bracket(league_id), playoff_roster_ids)
         except Exception as e:
             logger.warning(f"Could not fetch winners bracket: {e}")
 
         try:
-            losers_bracket = await self.client.get_losers_bracket(league_id)
-            for entry in losers_bracket:
-                if entry.get("t1"):
-                    consolation_roster_ids.add(entry["t1"])
-                if entry.get("t2"):
-                    consolation_roster_ids.add(entry["t2"])
+            _collect(await self.client.get_losers_bracket(league_id), consolation_roster_ids)
         except Exception as e:
             logger.warning(f"Could not fetch losers bracket: {e}")
 
-        return playoff_roster_ids, consolation_roster_ids
+        return playoff_roster_ids, consolation_roster_ids, placements
 
     async def _process_week_matchups(self, matchups_data: List[Dict[str, Any]],
                                       season_id: int, week: int,
                                       match_type: str = "regular",
                                       playoff_roster_ids: set = None,
-                                      consolation_roster_ids: set = None):
+                                      consolation_roster_ids: set = None,
+                                      bracket_placements: Dict[tuple, int] = None,
+                                      regular_season_weeks: int = 0):
         """Process matchups for a specific week."""
         # Group matchups by matchup_id
         matchup_groups = {}
@@ -573,6 +586,14 @@ class SyncService:
                 roster1, roster2 = roster2, roster1
                 team1, team2 = team2, team1
 
+            # Bracket placement from Sleeper data (1 = championship game, ...)
+            placement = None
+            if bracket_placements and week > regular_season_weeks:
+                bracket_round = week - regular_season_weeks
+                placement = bracket_placements.get(
+                    (bracket_round, frozenset((team1.get("roster_id"), team2.get("roster_id"))))
+                )
+
             points1 = team1.get("points", 0) or 0
             points2 = team2.get("points", 0) or 0
             winner_id = roster1.id if points1 > points2 else (roster2.id if points2 > points1 else None)
@@ -582,6 +603,9 @@ class SyncService:
                 matchup.away_points = points2
                 matchup.winner_roster_id = winner_id
                 matchup.match_type = effective_match_type
+                # Don't wipe a stored placement when a later bracket fetch fails
+                if placement is not None:
+                    matchup.bracket_placement = placement
             else:
                 matchup = Matchup(
                     season_id=season_id,
@@ -592,7 +616,8 @@ class SyncService:
                     home_points=points1,
                     away_points=points2,
                     winner_roster_id=winner_id,
-                    match_type=effective_match_type
+                    match_type=effective_match_type,
+                    bracket_placement=placement,
                 )
                 self.db.add(matchup)
 

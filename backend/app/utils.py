@@ -17,6 +17,15 @@ def utcfromtimestamp_ms(ms: float) -> datetime:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).replace(tzinfo=None)
 
 
+def ordinal(n: int) -> str:
+    """1 -> '1st', 3 -> '3rd', 9 -> '9th', 11 -> '11th'."""
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def matchup_played(home_points, away_points) -> bool:
     """True once either side of a matchup has scored.
 

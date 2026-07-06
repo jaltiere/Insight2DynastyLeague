@@ -28,6 +28,9 @@ class Matchup(Base):
     # Result
     winner_roster_id = Column(Integer, ForeignKey("rosters.id"))
     match_type = Column(String(20), default="regular")  # "regular", "playoff", "consolation"
+    # Sleeper bracket placement (p) within its bracket: 1 = championship game,
+    # 3 = 3rd place game, etc. NULL for regular season / non-placement games.
+    bracket_placement = Column(Integer)
 
     # Relationships
     home_roster = relationship("Roster", foreign_keys=[home_roster_id], back_populates="home_matchups")
