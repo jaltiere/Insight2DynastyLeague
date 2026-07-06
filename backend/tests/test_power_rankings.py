@@ -149,7 +149,7 @@ async def test_trends_returns_snapshot_data(client: AsyncClient, db_session: Asy
 
 @pytest.mark.anyio
 async def test_snapshot_endpoint_requires_auth(client: AsyncClient, db_session: AsyncSession):
-    """POST /power-rankings/snapshot returns 401 without correct Authorization."""
+    """POST /power-rankings/snapshot rejects missing or wrong Authorization."""
     league = await create_league(db_session)
     await create_season(db_session, league, year=2024)
 
@@ -158,14 +158,20 @@ async def test_snapshot_endpoint_requires_auth(client: AsyncClient, db_session: 
         params={"season_year": 2024, "week": 6},
         headers={"Authorization": "Bearer wrong-secret"},
     )
+    assert resp.status_code == 403
+
+    resp = await client.post(
+        f"{LEAGUE_PREFIX}/power-rankings/snapshot",
+        params={"season_year": 2024, "week": 6},
+    )
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_snapshot_endpoint_saves_snapshot(client: AsyncClient, db_session: AsyncSession):
     """POST /power-rankings/snapshot with correct auth saves rows to DB."""
-    # Default CRON_SECRET from config.py is "change-me-in-production"
-    cron_secret = "change-me-in-production"
+    # Matches the CRON_SECRET env var set in conftest.py
+    cron_secret = "test-cron-secret"
 
     league = await create_league(db_session)
     season = await create_season(db_session, league, year=2024)

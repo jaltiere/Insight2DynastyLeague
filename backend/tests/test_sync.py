@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, patch
 # run 4 real-league syncs in unit tests.
 _TEST_LEAGUES = [{"id": "test_league_001", "slug": "test", "recaps_enabled": False}]
 
+# Matches the CRON_SECRET env var set in conftest.py
+_AUTH = {"Authorization": "Bearer test-cron-secret"}
+
 
 def _make_mock_sleeper_client():
     """Create a mock SleeperClient with valid return data for all methods."""
@@ -42,7 +45,7 @@ async def test_sync_league_success(client):
     mock = _make_mock_sleeper_client()
     with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
          patch("app.services.sync_service.sleeper_client", mock):
-        response = await client.post("/api/sync/league")
+        response = await client.post("/api/sync/league", headers=_AUTH)
     assert response.status_code == 200
     data = response.json()
     assert len(data["leagues"]) == 1
@@ -56,7 +59,7 @@ async def test_sync_league_external_api_failure(client):
     mock.get_nfl_state.side_effect = Exception("Sleeper API is down")
     with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
          patch("app.services.sync_service.sleeper_client", mock):
-        response = await client.post("/api/sync/league")
+        response = await client.post("/api/sync/league", headers=_AUTH)
     assert response.status_code == 500
     assert "All syncs failed" in response.json()["detail"]
 
@@ -65,8 +68,8 @@ async def test_sync_league_idempotent(client):
     mock = _make_mock_sleeper_client()
     with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
          patch("app.services.sync_service.sleeper_client", mock):
-        response1 = await client.post("/api/sync/league")
-        response2 = await client.post("/api/sync/league")
+        response1 = await client.post("/api/sync/league", headers=_AUTH)
+        response2 = await client.post("/api/sync/league", headers=_AUTH)
     assert response1.status_code == 200
     assert response2.status_code == 200
 
@@ -107,7 +110,7 @@ async def test_sync_offseason_transactions(client):
 
     with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
          patch("app.services.sync_service.sleeper_client", mock):
-        response = await client.post("/api/sync/league")
+        response = await client.post("/api/sync/league", headers=_AUTH)
 
     assert response.status_code == 200
     data = response.json()
@@ -145,7 +148,7 @@ async def test_sync_regular_season_transactions(client):
 
     with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
          patch("app.services.sync_service.sleeper_client", mock):
-        response = await client.post("/api/sync/league")
+        response = await client.post("/api/sync/league", headers=_AUTH)
 
     assert response.status_code == 200
     data = response.json()
@@ -158,3 +161,41 @@ async def test_sync_regular_season_transactions(client):
     assert 5 in weeks_called
     # Should NOT call week 6 or beyond
     assert 6 not in weeks_called
+
+
+async def test_sync_endpoints_require_auth(client):
+    """All sync endpoints reject requests without an Authorization header."""
+    for path in ("/api/sync/league", "/api/sync/history", "/api/cron/sync"):
+        response = await client.post(path)
+        assert response.status_code == 401, path
+
+
+async def test_sync_endpoints_reject_wrong_token(client):
+    """All sync endpoints reject requests with an incorrect bearer token."""
+    headers = {"Authorization": "Bearer wrong-secret"}
+    for path in ("/api/sync/league", "/api/sync/history", "/api/cron/sync"):
+        response = await client.post(path, headers=headers)
+        assert response.status_code == 403, path
+
+
+async def test_sync_endpoints_reject_unconfigured_secret(client, monkeypatch):
+    """Endpoints return 503 when CRON_SECRET is unset or the shipped placeholder."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "CRON_SECRET", "change-me-in-production")
+    response = await client.post("/api/sync/league", headers=_AUTH)
+    assert response.status_code == 503
+
+    monkeypatch.setattr(get_settings(), "CRON_SECRET", "")
+    response = await client.post("/api/sync/league", headers=_AUTH)
+    assert response.status_code == 503
+
+
+async def test_cron_sync_with_valid_auth(client):
+    """POST /api/cron/sync succeeds with the correct bearer token."""
+    mock = _make_mock_sleeper_client()
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/cron/sync", headers=_AUTH)
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"

@@ -163,7 +163,4 @@ export const api = {
 
   // Search (league-scoped)
   search: (q: string) => apiClient.get('/search', { params: { q } }).then(res => res.data),
-
-  // Sync (global)
-  syncLeagueData: () => globalApiClient.post('/sync/league'),
 };
