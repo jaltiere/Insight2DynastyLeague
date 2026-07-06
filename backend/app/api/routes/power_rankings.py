@@ -141,7 +141,10 @@ async def get_power_rankings_trends(
     try:
         result = await db.execute(
             select(PowerRankingSnapshot)
-            .where(PowerRankingSnapshot.season_year == season_year)
+            .where(
+                PowerRankingSnapshot.season_year == season_year,
+                PowerRankingSnapshot.group_id == league_id,
+            )
             .order_by(PowerRankingSnapshot.week, PowerRankingSnapshot.rank)
         )
         snapshots = result.scalars().all()
@@ -261,7 +264,7 @@ async def _get_season_power_rankings(
     # Load most-recent prior snapshot for rank-change calculation.
     # Non-fatal: if the table doesn't exist yet (migration not run), skip trend data.
     try:
-        prior_ranks = await _get_prior_snapshot_ranks(db, year)
+        prior_ranks = await _get_prior_snapshot_ranks(db, year, league_id)
     except Exception:
         prior_ranks = {}
 
@@ -270,7 +273,7 @@ async def _get_season_power_rankings(
 
     for roster, user in rosters_with_users:
         current_score = await _calculate_current_season_score(
-            roster, all_rosters, season, db
+            roster, all_rosters, season, db, league_id
         )
         roster_score = await _calculate_roster_value_score(roster, players_dict, db)
         historical_score = await _calculate_historical_score(roster, db)
@@ -308,12 +311,17 @@ async def _get_season_power_rankings(
     return PowerRankingsResponse(season=year, rankings=rankings)
 
 
-async def _get_prior_snapshot_ranks(db: AsyncSession, season_year: int) -> Dict[int, int]:
+async def _get_prior_snapshot_ranks(
+    db: AsyncSession, season_year: int, league_id: str
+) -> Dict[int, int]:
     """Return {roster_id: rank} from the most recent snapshot week for this season."""
     # Find the latest week that has snapshots
     result = await db.execute(
         select(func.max(PowerRankingSnapshot.week))
-        .where(PowerRankingSnapshot.season_year == season_year)
+        .where(
+            PowerRankingSnapshot.season_year == season_year,
+            PowerRankingSnapshot.group_id == league_id,
+        )
     )
     latest_week = result.scalar_one_or_none()
     if latest_week is None:
@@ -324,6 +332,7 @@ async def _get_prior_snapshot_ranks(db: AsyncSession, season_year: int) -> Dict[
         .where(
             PowerRankingSnapshot.season_year == season_year,
             PowerRankingSnapshot.week == latest_week,
+            PowerRankingSnapshot.group_id == league_id,
         )
     )
     snapshots = result.scalars().all()
@@ -338,9 +347,10 @@ async def _save_snapshot(db: AsyncSession, season_year: int, week: int, league_i
     rankings_response = await _get_season_power_rankings(db, season_year, league_id=league_id)
 
     for team in rankings_response.rankings:
-        # Try to find an existing row for this (season_year, week, roster_id)
+        # Try to find an existing row for this (group, season_year, week, roster_id)
         result = await db.execute(
             select(PowerRankingSnapshot).where(
+                PowerRankingSnapshot.group_id == league_id,
                 PowerRankingSnapshot.season_year == season_year,
                 PowerRankingSnapshot.week == week,
                 PowerRankingSnapshot.roster_id == team.roster_id,
@@ -357,6 +367,7 @@ async def _save_snapshot(db: AsyncSession, season_year: int, week: int, league_i
         else:
             db.add(
                 PowerRankingSnapshot(
+                    group_id=league_id,
                     season_year=season_year,
                     week=week,
                     roster_id=team.roster_id,
@@ -372,13 +383,18 @@ async def _save_snapshot(db: AsyncSession, season_year: int, week: int, league_i
 
 
 async def _calculate_current_season_score(
-    roster: Roster, all_rosters: List[Roster], season: Season, db: AsyncSession
+    roster: Roster, all_rosters: List[Roster], season: Season, db: AsyncSession,
+    league_id: str,
 ) -> float:
     """Calculate current season performance score (40 points max) using rolling 15-game averages."""
     score = 0.0
 
+    # Scope to this league group: owners can be in multiple configured
+    # leagues, and their games elsewhere must not bleed into these rankings.
     result = await db.execute(
-        select(Roster.id).where(Roster.user_id == roster.user_id)
+        select(Roster.id)
+        .join(Season, Roster.season_id == Season.id)
+        .where(Roster.user_id == roster.user_id, Season.group_id == league_id)
     )
     user_roster_ids = [row[0] for row in result]
 
@@ -434,7 +450,9 @@ async def _calculate_current_season_score(
     all_roster_avgs = []
     for r in all_rosters:
         result = await db.execute(
-            select(Roster.id).where(Roster.user_id == r.user_id)
+            select(Roster.id)
+            .join(Season, Roster.season_id == Season.id)
+            .where(Roster.user_id == r.user_id, Season.group_id == league_id)
         )
         r_roster_ids = [row[0] for row in result]
 

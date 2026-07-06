@@ -85,12 +85,12 @@ async def test_rank_change_populated_after_snapshot(client: AsyncClient, db_sess
 
     # Manually insert a snapshot where roster 1 was rank 2 and roster 2 was rank 1
     db_session.add(PowerRankingSnapshot(
-        season_year=2024, week=5, roster_id=1, rank=2,
+        group_id="test_league_001", season_year=2024, week=5, roster_id=1, rank=2,
         total_score=60.0, current_season_score=20.0,
         roster_value_score=30.0, historical_score=10.0,
     ))
     db_session.add(PowerRankingSnapshot(
-        season_year=2024, week=5, roster_id=2, rank=1,
+        group_id="test_league_001", season_year=2024, week=5, roster_id=2, rank=1,
         total_score=65.0, current_season_score=25.0,
         roster_value_score=30.0, historical_score=10.0,
     ))
@@ -130,7 +130,7 @@ async def test_trends_returns_snapshot_data(client: AsyncClient, db_session: Asy
 
     for week in (3, 5, 7):
         db_session.add(PowerRankingSnapshot(
-            season_year=2024, week=week, roster_id=1, rank=1,
+            group_id="test_league_001", season_year=2024, week=week, roster_id=1, rank=1,
             total_score=75.0, current_season_score=25.0,
             roster_value_score=35.0, historical_score=15.0,
         ))
@@ -199,3 +199,77 @@ async def test_snapshot_endpoint_saves_snapshot(client: AsyncClient, db_session:
     )
     snapshots = result.scalars().all()
     assert len(snapshots) == 2
+    assert all(s.group_id == "test_league_001" for s in snapshots)
+
+
+@pytest.mark.anyio
+async def test_snapshots_are_league_scoped(client: AsyncClient, db_session: AsyncSession):
+    """Same (season, week, roster_id) can exist for two leagues; reads only see own league."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    user = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    await create_roster(db_session, season, user, roster_id=1, team_name="Team Alice")
+
+    # Snapshot rows for our league and a sister league, colliding on
+    # (season_year, week, roster_id) — the exact pre-fix corruption scenario
+    db_session.add(PowerRankingSnapshot(
+        group_id="test_league_001", season_year=2024, week=5, roster_id=1, rank=1,
+        total_score=80.0, current_season_score=30.0,
+        roster_value_score=35.0, historical_score=15.0,
+    ))
+    db_session.add(PowerRankingSnapshot(
+        group_id="other_league_999", season_year=2024, week=5, roster_id=1, rank=9,
+        total_score=10.0, current_season_score=3.0,
+        roster_value_score=5.0, historical_score=2.0,
+    ))
+    await db_session.flush()
+
+    # Trends must only include this league's snapshot
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024/trends")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["teams"]) == 1
+    assert body["teams"][0]["ranks_by_week"] == [
+        {"week": 5, "rank": 1, "total_score": 80.0}
+    ]
+
+    # rank_change must be computed against this league's rank (1), not the
+    # sister league's rank (9)
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024")
+    assert resp.status_code == 200
+    team = resp.json()["rankings"][0]
+    assert team["previous_rank"] == 1
+
+
+@pytest.mark.anyio
+async def test_rolling_window_excludes_other_league_games(client: AsyncClient, db_session: AsyncSession):
+    """An owner in two leagues must not have games elsewhere counted here.
+
+    u1 loses their only game in this league (50-100). In a sister league they
+    win big three times. With correct scoping u1's current_season_score is 0
+    (0% wins, 0th percentile points, negative differential, 0-for-recent).
+    """
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    u1 = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", username="bob", display_name="Bob")
+    r1 = await create_roster(db_session, season, u1, roster_id=1, wins=0, losses=1)
+    r2 = await create_roster(db_session, season, u2, roster_id=2, wins=1, losses=0)
+    await create_matchup(db_session, season, r1, r2, week=1, matchup_id=1,
+                         home_points=50.0, away_points=100.0, winner_roster_id=r2.id)
+
+    # Sister league where u1 dominates
+    league_b = await create_league(db_session, id="other_league_999", name="Sister League")
+    season_b = await create_season(db_session, league_b, year=2024)
+    u3 = await create_user(db_session, id="u3", username="carol", display_name="Carol")
+    rb1 = await create_roster(db_session, season_b, u1, roster_id=1)
+    rb2 = await create_roster(db_session, season_b, u3, roster_id=2)
+    for week in (1, 2, 3):
+        await create_matchup(db_session, season_b, rb1, rb2, week=week, matchup_id=1,
+                             home_points=200.0, away_points=50.0, winner_roster_id=rb1.id)
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024")
+    assert resp.status_code == 200
+    rankings = {t["user_id"]: t for t in resp.json()["rankings"]}
+    assert rankings["u1"]["current_season_score"] == 0.0
+    assert rankings["u2"]["rank"] < rankings["u1"]["rank"]
