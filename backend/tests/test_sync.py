@@ -1,4 +1,9 @@
+import pytest
 from unittest.mock import AsyncMock, patch
+
+from sqlalchemy import select
+
+from app.models import Matchup, Roster
 
 # A single-entry LEAGUES list that matches the test DB's league_id so we don't
 # run 4 real-league syncs in unit tests.
@@ -6,6 +11,16 @@ _TEST_LEAGUES = [{"id": "test_league_001", "slug": "test", "recaps_enabled": Fal
 
 # Matches the CRON_SECRET env var set in conftest.py
 _AUTH = {"Authorization": "Bearer test-cron-secret"}
+
+
+@pytest.fixture(autouse=True)
+def mock_ktc_refresh():
+    """Prevent sync tests from making real HTTP calls to keeptradecut.com."""
+    with patch(
+        "app.services.ktc_service.refresh_ktc_values",
+        new=AsyncMock(return_value={"status": "mocked"}),
+    ) as mocked:
+        yield mocked
 
 
 def _make_mock_sleeper_client():
@@ -161,6 +176,90 @@ async def test_sync_regular_season_transactions(client):
     assert 5 in weeks_called
     # Should NOT call week 6 or beyond
     assert 6 not in weeks_called
+
+
+async def test_sync_rosters_preserve_fractional_points(client, db_session):
+    """points_for/points_against keep Sleeper's fpts_decimal fraction."""
+    mock = _make_mock_sleeper_client()
+    mock.get_rosters.return_value = [
+        {
+            "roster_id": 1,
+            "owner_id": "u1",
+            "players": [],
+            "starters": [],
+            "reserve": [],
+            "taxi": [],
+            "settings": {
+                "wins": 5, "losses": 2, "ties": 0,
+                "fpts": 800, "fpts_decimal": 55,
+                "fpts_against": 700, "fpts_against_decimal": 25,
+                "division": 1,
+            },
+        },
+    ]
+
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/sync/league", headers=_AUTH)
+
+    assert response.status_code == 200
+    result = await db_session.execute(select(Roster))
+    roster = result.scalars().one()
+    assert roster.points_for == pytest.approx(800.55)
+    assert roster.points_against == pytest.approx(700.25)
+
+
+def _matchup_entry(roster_id: int, points: float) -> dict:
+    return {
+        "roster_id": roster_id,
+        "matchup_id": 1,
+        "points": points,
+        "players_points": {},
+        "starters": [],
+    }
+
+
+async def test_resync_keeps_home_away_assignment_stable(client, db_session):
+    """Re-syncing with the matchup pair in reversed order must not swap scores.
+
+    home_roster_id is fixed at matchup creation; a later sync that receives the
+    two teams in the opposite order has to update home/away points for the
+    same rosters, not by position in the API response.
+    """
+    mock = _make_mock_sleeper_client()
+    mock.get_nfl_state.return_value = {"season": "2024", "week": 1, "season_type": "regular"}
+    mock.get_rosters.return_value = [
+        {
+            "roster_id": rid, "owner_id": "u1", "players": [], "starters": [],
+            "reserve": [], "taxi": [],
+            "settings": {"wins": 0, "losses": 0, "ties": 0, "fpts": 0, "fpts_against": 0, "division": 1},
+        }
+        for rid in (1, 2)
+    ]
+
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
+        # First sync: roster 1 listed first -> becomes home
+        mock.get_matchups.return_value = [_matchup_entry(1, 100.5), _matchup_entry(2, 90.25)]
+        response1 = await client.post("/api/sync/league", headers=_AUTH)
+
+        # Second sync: Sleeper returns the pair in reversed order with new points
+        mock.get_matchups.return_value = [_matchup_entry(2, 95.5), _matchup_entry(1, 105.75)]
+        response2 = await client.post("/api/sync/league", headers=_AUTH)
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+
+    result = await db_session.execute(select(Matchup))
+    matchup = result.scalars().one()
+    result = await db_session.execute(select(Roster).where(Roster.id == matchup.home_roster_id))
+    home_roster = result.scalars().one()
+
+    # Home is still roster 1, and its updated score (105.75) stays on the home side
+    assert home_roster.roster_id == 1
+    assert matchup.home_points == pytest.approx(105.75)
+    assert matchup.away_points == pytest.approx(95.5)
+    assert matchup.winner_roster_id == matchup.home_roster_id
 
 
 async def test_sync_endpoints_require_auth(client):

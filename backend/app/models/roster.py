@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -21,8 +21,8 @@ class Roster(Base):
     wins = Column(Integer, default=0)
     losses = Column(Integer, default=0)
     ties = Column(Integer, default=0)
-    points_for = Column(Integer, default=0)
-    points_against = Column(Integer, default=0)
+    points_for = Column(Float, default=0.0)
+    points_against = Column(Float, default=0.0)
 
     # Player IDs
     players = Column(JSON)  # List of player IDs on roster

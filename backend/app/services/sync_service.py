@@ -34,6 +34,16 @@ class SyncService:
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _points_with_decimal(settings: Dict[str, Any], key: str) -> float:
+        """Combine Sleeper's split integer/decimal point fields into a float.
+
+        Sleeper stores e.g. 800.55 as fpts=800, fpts_decimal=55.
+        """
+        whole = settings.get(key, 0) or 0
+        decimal = settings.get(f"{key}_decimal", 0) or 0
+        return float(whole) + float(decimal) / 100
+
     async def sync_all_history(self) -> Dict[str, Any]:
         """Sync all historical seasons by walking the previous_league_id chain."""
         try:
@@ -349,7 +359,7 @@ class SyncService:
         if season:
             season.num_divisions = settings.get("divisions", 2)
             season.playoff_structure = settings.get("playoff_structure", {})
-            season.regular_season_weeks = settings.get("playoff_week_start", 14) - 1
+            season.regular_season_weeks = settings.get("playoff_week_start", 15) - 1
             season.playoff_weeks = settings.get("playoff_rounds", 3)
             if group_id:
                 season.group_id = group_id
@@ -360,7 +370,7 @@ class SyncService:
                 year=year,
                 num_divisions=settings.get("divisions", 2),
                 playoff_structure=settings.get("playoff_structure", {}),
-                regular_season_weeks=settings.get("playoff_week_start", 14) - 1,
+                regular_season_weeks=settings.get("playoff_week_start", 15) - 1,
                 playoff_weeks=settings.get("playoff_rounds", 3)
             )
             self.db.add(season)
@@ -409,11 +419,12 @@ class SyncService:
             if roster:
                 roster.user_id = owner_id
                 roster.team_name = team_name
+                roster.division = settings.get("division")
                 roster.wins = settings.get("wins", 0)
                 roster.losses = settings.get("losses", 0)
                 roster.ties = settings.get("ties", 0)
-                roster.points_for = int(settings.get("fpts", 0) or 0)
-                roster.points_against = int(settings.get("fpts_against", 0) or 0)
+                roster.points_for = self._points_with_decimal(settings, "fpts")
+                roster.points_against = self._points_with_decimal(settings, "fpts_against")
                 roster.players = roster_data.get("players", [])
                 roster.starters = roster_data.get("starters", [])
                 roster.reserve = roster_data.get("reserve", [])
@@ -429,8 +440,8 @@ class SyncService:
                     wins=settings.get("wins", 0),
                     losses=settings.get("losses", 0),
                     ties=settings.get("ties", 0),
-                    points_for=int(settings.get("fpts", 0) or 0),
-                    points_against=int(settings.get("fpts_against", 0) or 0),
+                    points_for=self._points_with_decimal(settings, "fpts"),
+                    points_against=self._points_with_decimal(settings, "fpts_against"),
                     players=roster_data.get("players", []),
                     starters=roster_data.get("starters", []),
                     reserve=roster_data.get("reserve", []),
@@ -555,6 +566,12 @@ class SyncService:
                 )
             )
             matchup = result.scalar_one_or_none()
+
+            # Sleeper's response order is not guaranteed; on re-sync, realign
+            # the pair to the stored home/away assignment so scores never swap.
+            if matchup and matchup.home_roster_id == roster2.id:
+                roster1, roster2 = roster2, roster1
+                team1, team2 = team2, team1
 
             points1 = team1.get("points", 0) or 0
             points2 = team2.get("points", 0) or 0
@@ -905,7 +922,7 @@ class SyncService:
                     award_detail=f"Division {div_num}",
                     roster_id=winner.roster_id,
                     final_record=f"{winner.wins or 0}-{winner.losses or 0}-{winner.ties or 0}",
-                    points_for=winner.points_for,
+                    points_for=int(winner.points_for or 0),
                 ))
 
         # --- Most points in regular season ---
@@ -921,7 +938,7 @@ class SyncService:
                         award_type="most_points",
                         roster_id=top_scorer.roster_id,
                         final_record=f"{top_scorer.wins or 0}-{top_scorer.losses or 0}-{top_scorer.ties or 0}",
-                        points_for=top_scorer.points_for,
+                        points_for=int(top_scorer.points_for or 0),
                     ))
 
         # --- Most points left on bench (regular season only) ---
