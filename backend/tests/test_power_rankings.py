@@ -12,6 +12,8 @@ from tests.conftest import (
     create_season,
     create_roster,
     create_matchup,
+    create_player,
+    create_matchup_player_point,
 )
 
 
@@ -273,3 +275,63 @@ async def test_rolling_window_excludes_other_league_games(client: AsyncClient, d
     rankings = {t["user_id"]: t for t in resp.json()["rankings"]}
     assert rankings["u1"]["current_season_score"] == 0.0
     assert rankings["u2"]["rank"] < rankings["u1"]["rank"]
+
+
+@pytest.mark.anyio
+async def test_player_stats_uses_recent_window_not_career_avg(db_session: AsyncSession):
+    """_calculate_player_stats averages the last N games, not the whole career."""
+    from app.api.routes.power_rankings import _calculate_player_stats
+
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    user = await create_user(db_session, id="u1", display_name="Alice")
+    roster = await create_roster(db_session, season, user, roster_id=1)
+    opp = await create_user(db_session, id="u2", display_name="Bob")
+    opp_r = await create_roster(db_session, season, opp, roster_id=2)
+    player = await create_player(db_session, id="p1", full_name="Star Guy", position="WR")
+
+    # 20 games: first 5 at 0 pts, most recent 15 at 20 pts.
+    # Career avg = 15; correct rolling-15 avg = 20.
+    for week in range(1, 21):
+        m = await create_matchup(db_session, season, roster, opp_r, week=week,
+                                 matchup_id=1, home_points=100.0, away_points=90.0)
+        await create_matchup_player_point(
+            db_session, m, roster, player,
+            points=(0.0 if week <= 5 else 20.0),
+        )
+
+    stats = await _calculate_player_stats([player.id], db_session, league.id)
+    assert stats[player.id] == 20.0
+
+
+@pytest.mark.anyio
+async def test_player_stats_scoped_to_league(db_session: AsyncSession):
+    """A player's point rows in another league don't affect this league's PPG."""
+    from app.api.routes.power_rankings import _calculate_player_stats
+
+    player = await create_player(db_session, id="p1", full_name="Dual Rostered", position="RB")
+
+    league_a = await create_league(db_session, id="league_a")
+    season_a = await create_season(db_session, league_a, year=2024)
+    ua1 = await create_user(db_session, id="ua1", display_name="A1")
+    ua2 = await create_user(db_session, id="ua2", display_name="A2")
+    ra1 = await create_roster(db_session, season_a, ua1, roster_id=1)
+    ra2 = await create_roster(db_session, season_a, ua2, roster_id=2)
+    ma = await create_matchup(db_session, season_a, ra1, ra2, week=1, matchup_id=1,
+                              home_points=100.0, away_points=90.0)
+    await create_matchup_player_point(db_session, ma, ra1, player, points=10.0)
+
+    league_b = await create_league(db_session, id="league_b", name="B")
+    season_b = await create_season(db_session, league_b, year=2024)
+    ub1 = await create_user(db_session, id="ub1", display_name="B1")
+    ub2 = await create_user(db_session, id="ub2", display_name="B2")
+    rb1 = await create_roster(db_session, season_b, ub1, roster_id=1)
+    rb2 = await create_roster(db_session, season_b, ub2, roster_id=2)
+    mb = await create_matchup(db_session, season_b, rb1, rb2, week=1, matchup_id=1,
+                              home_points=100.0, away_points=90.0)
+    await create_matchup_player_point(db_session, mb, rb1, player, points=30.0)
+
+    stats_a = await _calculate_player_stats([player.id], db_session, "league_a")
+    stats_b = await _calculate_player_stats([player.id], db_session, "league_b")
+    assert stats_a[player.id] == 10.0
+    assert stats_b[player.id] == 30.0

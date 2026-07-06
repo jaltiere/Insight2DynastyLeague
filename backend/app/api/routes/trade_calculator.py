@@ -87,7 +87,7 @@ async def get_owners(
         if roster.players:
             all_player_ids.update(roster.players)
 
-    player_stats = await _calculate_player_stats(list(all_player_ids), db) if all_player_ids else {}
+    player_stats = await _calculate_player_stats(list(all_player_ids), db, league_id) if all_player_ids else {}
 
     from app.api.routes.power_rankings import _calculate_avg_roster_age, _calculate_player_power_score
     from app.models import Player as PlayerModel
@@ -188,7 +188,7 @@ async def get_roster_with_values(
     values_by_id = {row[0]: (row[1] or 0, row[2]) for row in v_result.all()}
 
     # Fetch league PPG for each player (all-time avg in this league's scoring)
-    league_ppg = await _calculate_player_stats(player_ids, db)
+    league_ppg = await _calculate_player_stats(player_ids, db, league_id)
 
     # Build league-wide position avg PPG across ALL rosters (not just this owner's)
     all_rosters_result = await db.execute(
@@ -202,7 +202,7 @@ async def get_roster_with_values(
         select(Player).where(Player.id.in_(all_player_ids_league))
     )
     all_players_by_id = {p.id: p for p in all_players_result.scalars().all()}
-    all_league_ppg = await _calculate_player_stats(all_player_ids_league, db)
+    all_league_ppg = await _calculate_player_stats(all_player_ids_league, db, league_id)
 
     pos_ppg: dict[str, list[float]] = {}
     for pid in all_player_ids_league:

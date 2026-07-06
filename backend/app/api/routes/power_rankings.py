@@ -96,7 +96,7 @@ async def get_roster_breakdown(
     result = await db.execute(select(Player).where(Player.id.in_(player_ids)))
     players = list(result.scalars().all())
 
-    player_stats = await _calculate_player_stats(player_ids, db)
+    player_stats = await _calculate_player_stats(player_ids, db, league_id)
     ktc_values = await _fetch_ktc_values(player_ids, db)
     position_averages = _calculate_position_averages(players, player_stats)
 
@@ -275,7 +275,7 @@ async def _get_season_power_rankings(
         current_score = await _calculate_current_season_score(
             roster, all_rosters, season, db, league_id
         )
-        roster_score = await _calculate_roster_value_score(roster, players_dict, db)
+        roster_score = await _calculate_roster_value_score(roster, players_dict, db, league_id)
         historical_score = await _calculate_historical_score(roster, db)
         total_score = current_score + roster_score + historical_score
         avg_age = _calculate_avg_roster_age(roster, players_dict)
@@ -406,7 +406,10 @@ async def _calculate_current_season_score(
         .join(Season, Matchup.season_id == Season.id)
         .where(
             (Matchup.home_roster_id.in_(user_roster_ids))
-            | (Matchup.away_roster_id.in_(user_roster_ids))
+            | (Matchup.away_roster_id.in_(user_roster_ids)),
+            # Unplayed matchups (offseason-synced future weeks) are 0-0 and
+            # must not consume rolling-window slots or zero the recent form
+            (Matchup.home_points > 0) | (Matchup.away_points > 0),
         )
         .order_by(desc(Season.year), desc(Matchup.week))
         .limit(15)
@@ -464,7 +467,8 @@ async def _calculate_current_season_score(
             .join(Season, Matchup.season_id == Season.id)
             .where(
                 (Matchup.home_roster_id.in_(r_roster_ids))
-                | (Matchup.away_roster_id.in_(r_roster_ids))
+                | (Matchup.away_roster_id.in_(r_roster_ids)),
+                (Matchup.home_points > 0) | (Matchup.away_points > 0),
             )
             .order_by(desc(Season.year), desc(Matchup.week))
             .limit(15)
@@ -511,7 +515,8 @@ async def _calculate_current_season_score(
 
 
 async def _calculate_roster_value_score(
-    roster: Roster, players_dict: Dict[str, Player], db: AsyncSession
+    roster: Roster, players_dict: Dict[str, Player], db: AsyncSession,
+    league_id: Optional[str] = None,
 ) -> float:
     """Calculate roster value score (40 points max)."""
     score = 0.0
@@ -526,7 +531,7 @@ async def _calculate_roster_value_score(
         return 0.0
 
     player_ids = [p.id for p in roster_players]
-    player_stats = await _calculate_player_stats(player_ids, db)
+    player_stats = await _calculate_player_stats(player_ids, db, league_id)
 
     # 1. Average Roster Age (15 pts)
     avg_age = _calculate_avg_roster_age(roster, players_dict)
@@ -662,38 +667,41 @@ async def _fetch_ktc_values(player_ids: List[str], db: AsyncSession) -> Dict[str
 
 
 async def _calculate_player_stats(
-    player_ids: List[str], db: AsyncSession, limit: int = 15
+    player_ids: List[str], db: AsyncSession, league_id: Optional[str] = None,
+    limit: int = 15,
 ) -> Dict[str, float]:
-    """Calculate rolling average points per game for players (last N games)."""
+    """Average points per game over each player's most recent `limit` games.
+
+    Scoped to one league group when league_id is given — the same player's
+    point rows exist per league, and mixing them misstates league PPG.
+    """
     if not player_ids:
         return {}
 
-    result = await db.execute(
+    query = (
         select(
             MatchupPlayerPoint.player_id,
-            func.avg(MatchupPlayerPoint.points).label("avg_points"),
+            MatchupPlayerPoint.points,
+            Season.year,
+            Matchup.week,
         )
+        .join(Matchup, MatchupPlayerPoint.matchup_id == Matchup.id)
+        .join(Season, Matchup.season_id == Season.id)
         .where(MatchupPlayerPoint.player_id.in_(player_ids))
-        .group_by(MatchupPlayerPoint.player_id)
     )
+    if league_id:
+        query = query.where(Season.group_id == league_id)
+    result = await db.execute(query)
 
-    player_stats = {}
-    for row in result:
-        player_stats[row.player_id] = float(row.avg_points) if row.avg_points else 0.0
+    rows_by_player: Dict[str, list] = {}
+    for pid, points, year, week in result.all():
+        rows_by_player.setdefault(pid, []).append((year, week, points or 0.0))
 
-    for player_id in player_ids:
-        if player_id not in player_stats:
-            result = await db.execute(
-                select(MatchupPlayerPoint.points)
-                .where(MatchupPlayerPoint.player_id == player_id)
-                .order_by(desc(MatchupPlayerPoint.id))
-                .limit(limit)
-            )
-            recent_points = [row.points for row in result]
-            if recent_points:
-                player_stats[player_id] = sum(recent_points) / len(recent_points)
-            else:
-                player_stats[player_id] = 0.0
+    player_stats = {pid: 0.0 for pid in player_ids}
+    for pid, rows in rows_by_player.items():
+        rows.sort(reverse=True)  # most recent (year, week) first
+        recent = rows[:limit]
+        player_stats[pid] = sum(r[2] for r in recent) / len(recent)
 
     return player_stats
 
