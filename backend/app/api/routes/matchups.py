@@ -6,6 +6,7 @@ from collections import defaultdict
 from app.database import get_db
 from app.api.deps import get_league_id
 from app.models import User, Roster, Matchup, Season
+from app.utils import matchup_played
 from typing import List, Dict, Any, Optional
 
 router = APIRouter()
@@ -65,6 +66,10 @@ async def get_head_to_head_matrix(
         home_pts = m.home_points or 0
         away_pts = m.away_points or 0
 
+        # Skip unplayed matchups (offseason-synced future weeks are 0-0)
+        if not matchup_played(home_pts, away_pts):
+            continue
+
         if home_pts > away_pts:
             matrix[home_user][away_user]["wins"] += 1
             matrix[away_user][home_user]["losses"] += 1
@@ -92,6 +97,9 @@ async def get_head_to_head_matrix(
         if len(scores) < 2:
             continue
         all_points = [s[1] for s in scores]
+        # Skip unplayed weeks, mirroring the standings median calculation
+        if max(all_points) == 0:
+            continue
         week_median = calc_median(all_points)
         for user_id, pts in scores:
             if pts > week_median:
@@ -180,6 +188,10 @@ async def get_head_to_head(
 
     games = []
     for matchup, season in matchups_with_seasons:
+        # Skip unplayed matchups (offseason-synced future weeks are 0-0)
+        if not matchup_played(matchup.home_points, matchup.away_points):
+            continue
+
         # Determine which user was home and which was away
         home_is_user1 = matchup.home_roster_id in user1_roster_ids
 

@@ -144,6 +144,33 @@ async def test_standings_median_record(client, db_session):
     assert standings["u4"]["median_losses"] == 2
 
 
+async def test_standings_median_ignores_unplayed_weeks(client, db_session):
+    """Future-week matchups synced with 0-0 scores must not count as median ties.
+
+    The offseason sync stores weeks 1-3 matchup pairings before any games are
+    played; those all-zero weeks previously showed as 3 median ties per team.
+    """
+    league = await create_league(db_session)
+    season = await create_season(db_session, league)
+    u1 = await create_user(db_session, id="u1", display_name="Owner 1")
+    u2 = await create_user(db_session, id="u2", display_name="Owner 2")
+    r1 = await create_roster(db_session, season, u1, roster_id=1, wins=0, losses=0)
+    r2 = await create_roster(db_session, season, u2, roster_id=2, wins=0, losses=0)
+
+    # Three unplayed weeks synced during the offseason: all scores 0-0
+    for week in (1, 2, 3):
+        await create_matchup(db_session, season, r1, r2, week=week, matchup_id=1,
+                             home_points=0, away_points=0, winner_roster_id=None,
+                             match_type="regular")
+
+    response = await client.get(f"{LEAGUE_PREFIX}/standings")
+    assert response.status_code == 200
+    for standing in response.json()["standings"]:
+        assert standing["median_wins"] == 0
+        assert standing["median_losses"] == 0
+        assert standing["median_ties"] == 0
+
+
 async def test_standings_median_excludes_playoffs(client, db_session):
     """Playoff matchups should not affect median record."""
     league = await create_league(db_session)

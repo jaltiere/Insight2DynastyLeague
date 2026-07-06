@@ -5,6 +5,7 @@ from collections import defaultdict
 from app.database import get_db
 from app.api.deps import get_league_id
 from app.models import User, Roster, Matchup, Season, SeasonAward
+from app.utils import matchup_played
 from typing import List, Dict, Any
 
 router = APIRouter()
@@ -216,6 +217,11 @@ async def get_team_records(
     playoff_games: Dict[str, List] = defaultdict(list)
 
     for matchup, season in matchups_with_seasons:
+        # Skip unplayed matchups (offseason-synced future weeks are 0-0);
+        # their NULL winner would otherwise register as a phantom tie streak
+        if not matchup_played(matchup.home_points, matchup.away_points):
+            continue
+
         mtype = matchup.match_type or "regular"
         for roster_id in (matchup.home_roster_id, matchup.away_roster_id):
             user_id = roster_to_user.get(roster_id)
