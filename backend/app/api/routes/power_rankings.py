@@ -271,9 +271,17 @@ async def _get_season_power_rankings(
     rankings = []
     all_rosters = [roster for roster, _ in rosters_with_users]
 
+    # Precompute every team's recent-15 window once (O(n) queries), instead of
+    # re-querying all teams inside each team's percentile calc (was O(n^2)).
+    windows = await _compute_recent_windows(all_rosters, db, league_id)
+    all_roster_avgs = [
+        w["total_points"] / w["games"]
+        for w in windows.values() if w and w["games"] > 0
+    ]
+
     for roster, user in rosters_with_users:
-        current_score = await _calculate_current_season_score(
-            roster, all_rosters, season, db, league_id
+        current_score = _current_season_score_from_window(
+            windows.get(roster.user_id), all_roster_avgs
         )
         roster_score = await _calculate_roster_value_score(roster, players_dict, db, league_id)
         historical_score = await _calculate_historical_score(roster, db)
@@ -382,114 +390,103 @@ async def _save_snapshot(db: AsyncSession, season_year: int, week: int, league_i
     return len(rankings_response.rankings)
 
 
-async def _calculate_current_season_score(
-    roster: Roster, all_rosters: List[Roster], season: Season, db: AsyncSession,
-    league_id: str,
-) -> float:
-    """Calculate current season performance score (40 points max) using rolling 15-game averages."""
-    score = 0.0
+async def _compute_recent_windows(
+    all_rosters: List[Roster], db: AsyncSession, league_id: str
+) -> Dict[str, Optional[dict]]:
+    """Precompute each owner's rolling last-15-game window in O(n) queries.
 
-    # Scope to this league group: owners can be in multiple configured
-    # leagues, and their games elsewhere must not bleed into these rankings.
-    result = await db.execute(
-        select(Roster.id)
+    Returns {user_id: window} where window aggregates wins, total/opponent
+    points, games played, and last-3-game wins. None when the owner has no
+    rosters in this league group. Scoped to league_id so owners in multiple
+    configured leagues don't pick up games from elsewhere.
+    """
+    # One query for the whole league group: user_id -> all their roster db ids
+    rid_rows = await db.execute(
+        select(Roster.user_id, Roster.id)
         .join(Season, Roster.season_id == Season.id)
-        .where(Roster.user_id == roster.user_id, Season.group_id == league_id)
+        .where(Season.group_id == league_id)
     )
-    user_roster_ids = [row[0] for row in result]
+    user_roster_ids: Dict[str, set] = {}
+    for uid, rid in rid_rows.all():
+        user_roster_ids.setdefault(uid, set()).add(rid)
 
-    if not user_roster_ids:
-        return 0.0
+    windows: Dict[str, Optional[dict]] = {}
+    for roster in all_rosters:
+        uid = roster.user_id
+        if uid in windows:  # one window per owner, even if they hold >1 roster
+            continue
 
-    result = await db.execute(
-        select(Matchup, Season.year)
-        .join(Season, Matchup.season_id == Season.id)
-        .where(
-            (Matchup.home_roster_id.in_(user_roster_ids))
-            | (Matchup.away_roster_id.in_(user_roster_ids)),
-            # Unplayed matchups (offseason-synced future weeks) are 0-0 and
-            # must not consume rolling-window slots or zero the recent form
-            (Matchup.home_points > 0) | (Matchup.away_points > 0),
-        )
-        .order_by(desc(Season.year), desc(Matchup.week))
-        .limit(15)
-    )
-    seen_ids = set()
-    recent_matchups = []
-    for matchup, year in result:
-        if matchup.id not in seen_ids:
-            seen_ids.add(matchup.id)
-            recent_matchups.append(matchup)
-
-    if not recent_matchups:
-        return 0.0
-
-    wins = 0
-    total_points = 0.0
-    opponent_points = 0.0
-
-    for matchup in recent_matchups:
-        is_home = matchup.home_roster_id in user_roster_ids
-        is_away = matchup.away_roster_id in user_roster_ids
-
-        if matchup.winner_roster_id in user_roster_ids:
-            wins += 1
-
-        if is_home:
-            total_points += matchup.home_points or 0.0
-            opponent_points += matchup.away_points or 0.0
-        elif is_away:
-            total_points += matchup.away_points or 0.0
-            opponent_points += matchup.home_points or 0.0
-
-    games_played = len(recent_matchups)
-
-    # 1. Win Percentage (15 pts)
-    if games_played > 0:
-        win_pct = wins / games_played
-        score += win_pct * 15
-
-    # 2. Points For Percentile (12 pts)
-    all_roster_avgs = []
-    for r in all_rosters:
-        result = await db.execute(
-            select(Roster.id)
-            .join(Season, Roster.season_id == Season.id)
-            .where(Roster.user_id == r.user_id, Season.group_id == league_id)
-        )
-        r_roster_ids = [row[0] for row in result]
-
-        if not r_roster_ids:
+        rids = user_roster_ids.get(uid)
+        if not rids:
+            windows[uid] = None
             continue
 
         result = await db.execute(
-            select(Matchup, Season.year)
+            select(Matchup)
             .join(Season, Matchup.season_id == Season.id)
             .where(
-                (Matchup.home_roster_id.in_(r_roster_ids))
-                | (Matchup.away_roster_id.in_(r_roster_ids)),
+                (Matchup.home_roster_id.in_(rids))
+                | (Matchup.away_roster_id.in_(rids)),
+                # Unplayed matchups (offseason-synced future weeks) are 0-0 and
+                # must not consume rolling-window slots or zero the recent form
                 (Matchup.home_points > 0) | (Matchup.away_points > 0),
             )
             .order_by(desc(Season.year), desc(Matchup.week))
             .limit(15)
         )
-        seen_ids = set()
-        r_matchups = []
-        for matchup, year in result:
-            if matchup.id not in seen_ids:
-                seen_ids.add(matchup.id)
-                r_matchups.append(matchup)
+        recent = []
+        seen = set()
+        for m in result.scalars():
+            if m.id not in seen:
+                seen.add(m.id)
+                recent.append(m)
 
-        if r_matchups:
-            r_total_points = 0.0
-            for m in r_matchups:
-                if m.home_roster_id in r_roster_ids:
-                    r_total_points += m.home_points or 0.0
-                elif m.away_roster_id in r_roster_ids:
-                    r_total_points += m.away_points or 0.0
-            r_avg = r_total_points / len(r_matchups)
-            all_roster_avgs.append(r_avg)
+        if not recent:
+            windows[uid] = {"wins": 0, "total_points": 0.0, "opp_points": 0.0,
+                            "games": 0, "recent3_wins": 0, "recent3_games": 0}
+            continue
 
+        wins = 0
+        total_points = 0.0
+        opp_points = 0.0
+        for m in recent:
+            if m.winner_roster_id in rids:
+                wins += 1
+            if m.home_roster_id in rids:
+                total_points += m.home_points or 0.0
+                opp_points += m.away_points or 0.0
+            elif m.away_roster_id in rids:
+                total_points += m.away_points or 0.0
+                opp_points += m.home_points or 0.0
+
+        recent3 = recent[:3]
+        windows[uid] = {
+            "wins": wins,
+            "total_points": total_points,
+            "opp_points": opp_points,
+            "games": len(recent),
+            "recent3_wins": sum(1 for m in recent3 if m.winner_roster_id in rids),
+            "recent3_games": len(recent3),
+        }
+
+    return windows
+
+
+def _current_season_score_from_window(
+    window: Optional[dict], all_roster_avgs: List[float]
+) -> float:
+    """Current season performance score (40 pts max) from a precomputed window."""
+    if not window or window["games"] == 0:
+        return 0.0
+
+    score = 0.0
+    games_played = window["games"]
+    total_points = window["total_points"]
+
+    # 1. Win Percentage (15 pts)
+    score += (window["wins"] / games_played) * 15
+
+    # 2. Points For Percentile (12 pts)
     if all_roster_avgs:
         roster_avg = total_points / games_played
         teams_below = sum(1 for avg in all_roster_avgs if avg < roster_avg)
@@ -497,19 +494,14 @@ async def _calculate_current_season_score(
         score += percentile * 12
 
     # 3. Point Differential (8 pts)
-    if games_played > 0:
-        avg_points = total_points / games_played
-        avg_opponent_points = opponent_points / games_played
-        point_diff = avg_points - avg_opponent_points
-        normalized_diff = max(0, min(8, (point_diff + 20) / 5))
-        score += normalized_diff
+    avg_points = total_points / games_played
+    avg_opponent_points = window["opp_points"] / games_played
+    point_diff = avg_points - avg_opponent_points
+    score += max(0, min(8, (point_diff + 20) / 5))
 
     # 4. Recent Form - last 3 weeks (5 pts)
-    recent_3_matchups = recent_matchups[:3]
-    recent_wins = sum(1 for m in recent_3_matchups if m.winner_roster_id in user_roster_ids)
-    if len(recent_3_matchups) > 0:
-        recent_form_pct = recent_wins / len(recent_3_matchups)
-        score += recent_form_pct * 5
+    if window["recent3_games"] > 0:
+        score += (window["recent3_wins"] / window["recent3_games"]) * 5
 
     return score
 
