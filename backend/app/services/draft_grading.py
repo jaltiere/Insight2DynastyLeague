@@ -108,6 +108,7 @@ class DraftGradingService:
 
         player_map = await self._build_player_map(all_player_ids)
         points_index = await self._fetch_all_player_points(all_player_ids)
+        points_by_player = self._group_points_by_player(points_index)
 
         graded: List[dict] = []
         for draft in drafts:
@@ -117,6 +118,7 @@ class DraftGradingService:
                 roster_to_user,
                 player_map,
                 points_index,
+                points_by_player,
             )
             # Skip drafts with no picks (e.g. placeholder/abandoned drafts in Sleeper)
             if not g or not g.get("owners"):
@@ -157,6 +159,7 @@ class DraftGradingService:
 
         player_map = await self._build_player_map(player_ids)
         points_index = await self._fetch_all_player_points(player_ids)
+        points_by_player = self._group_points_by_player(points_index)
 
         return await self._grade_draft(
             draft,
@@ -164,6 +167,7 @@ class DraftGradingService:
             roster_to_user,
             player_map,
             points_index,
+            points_by_player,
         )
 
     # ------------------------------------------------------------------
@@ -264,12 +268,21 @@ class DraftGradingService:
     # Computation helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _group_points_by_player(points_index: Dict) -> Dict[str, list]:
+        """Group the flat points index by player_id once so per-player value
+        lookups don't rescan the whole index (was O(picks x rows))."""
+        grouped: Dict[str, list] = defaultdict(list)
+        for (pid, rid, year, week), (pts, is_starter) in points_index.items():
+            grouped[pid].append((rid, year, week, pts, is_starter))
+        return grouped
+
     def _calculate_player_value(
         self,
         player_id: str,
         user_id: str,
         draft_season_year: int,
-        points_index: Dict,
+        points_by_player: Dict[str, list],
         user_roster_map: Dict[str, Set[int]],
     ) -> Tuple[float, int, int]:
         """Sum weighted points for a player on ANY roster belonging to
@@ -282,10 +295,7 @@ class DraftGradingService:
         # All db_roster_ids that belong to this user
         user_rids = user_roster_map.get(user_id, set())
 
-        for key, (pts, is_starter) in points_index.items():
-            pid, rid, year, week = key
-            if pid != str(player_id):
-                continue
+        for rid, year, week, pts, is_starter in points_by_player.get(str(player_id), ()):
             if rid not in user_rids:
                 continue
             # Only count points from draft year onwards
@@ -329,6 +339,7 @@ class DraftGradingService:
         roster_to_user: Dict[int, str],
         player_map: Dict,
         points_index: Dict,
+        points_by_player: Dict[str, list],
     ) -> dict:
         """Grade a single draft by calculating each owner's total pick value."""
         draft_year = draft.year
@@ -391,7 +402,7 @@ class DraftGradingService:
                 pick.player_id,
                 info["user_id"],
                 draft_year,
-                points_index,
+                points_by_player,
                 user_roster_map,
             )
             pick_value[pick.pick_no] = (val, s_wks, b_wks)

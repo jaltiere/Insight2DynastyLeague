@@ -147,6 +147,7 @@ class TradeGradingService:
 
         player_map = await self._build_player_map(all_player_ids)
         points_index = await self._fetch_all_player_points(all_player_ids)
+        points_by_player = self._group_points_by_player(points_index)
         position_points = await self._fetch_position_starter_points()
 
         graded: List[dict] = []
@@ -159,6 +160,7 @@ class TradeGradingService:
                 roster_to_user,
                 player_map,
                 points_index,
+                points_by_player,
                 position_points,
                 pick_baselines,
                 pick_index,
@@ -198,6 +200,7 @@ class TradeGradingService:
         all_player_ids.update(pick_index.values())
         player_map = await self._build_player_map(all_player_ids)
         points_index = await self._fetch_all_player_points(all_player_ids)
+        points_by_player = self._group_points_by_player(points_index)
         position_points = await self._fetch_position_starter_points()
 
         return self._grade_trade(
@@ -208,6 +211,7 @@ class TradeGradingService:
             roster_to_user,
             player_map,
             points_index,
+            points_by_player,
             position_points,
             pick_baselines,
             pick_index,
@@ -492,12 +496,21 @@ class TradeGradingService:
     # Computation helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _group_points_by_player(points_index: Dict) -> Dict[str, list]:
+        """Group the flat points index by player_id once so per-player value
+        lookups don't rescan the whole index (was O(trades x players x rows))."""
+        grouped: Dict[str, list] = defaultdict(list)
+        for (pid, rid, year, week), (pts, is_starter) in points_index.items():
+            grouped[pid].append((year, week, pts, is_starter))
+        return grouped
+
     def _calculate_player_value(
         self,
         player_id: str,
         trade_season_year: int,
         trade_week: int,
-        points_index: Dict,
+        points_by_player: Dict[str, list],
     ) -> Tuple[float, int, int]:
         """Sum weighted points for a player after the trade date, across ALL
         rosters (full career credit).  This ensures teams get credit for the
@@ -507,10 +520,7 @@ class TradeGradingService:
         starter_weeks = 0
         bench_weeks = 0
 
-        for key, (pts, is_starter) in points_index.items():
-            pid, rid, year, week = key
-            if pid != str(player_id):
-                continue
+        for year, week, pts, is_starter in points_by_player.get(str(player_id), ()):
             # Only count weeks after the trade
             if year < trade_season_year:
                 continue
@@ -607,6 +617,7 @@ class TradeGradingService:
         roster_to_user: Dict[int, str],
         player_map: Dict,
         points_index: Dict,
+        points_by_player: Dict[str, list],
         position_points: Dict,
         pick_baselines: Dict,
         pick_index: Dict,
@@ -671,7 +682,7 @@ class TradeGradingService:
                     pid,
                     trade_year,
                     trade_week,
-                    points_index,
+                    points_by_player,
                 )
 
                 # Find which side gave this player away
@@ -744,7 +755,7 @@ class TradeGradingService:
                         resolved_player_id,
                         trade_year,
                         trade_week,
-                        points_index,
+                        points_by_player,
                     )
                     pick_value = p_val
                     status = "actual"

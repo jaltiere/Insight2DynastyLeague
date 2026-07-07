@@ -335,3 +335,32 @@ async def test_player_stats_scoped_to_league(db_session: AsyncSession):
     stats_b = await _calculate_player_stats([player.id], db_session, "league_b")
     assert stats_a[player.id] == 10.0
     assert stats_b[player.id] == 30.0
+
+
+@pytest.mark.anyio
+async def test_current_season_score_percentile_differentiates_teams(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The precomputed rolling-window percentile still ranks a high scorer
+    above a low scorer (covers the O(n) window precompute path)."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+    users = []
+    rosters = []
+    for i in range(1, 4):
+        u = await create_user(db_session, id=f"u{i}", username=f"o{i}", display_name=f"O{i}")
+        r = await create_roster(db_session, season, u, roster_id=i, wins=0, losses=0)
+        users.append(u)
+        rosters.append(r)
+
+    # Each team plays one game; team1 scores highest, team3 lowest
+    await create_matchup(db_session, season, rosters[0], rosters[1], week=1, matchup_id=1,
+                         home_points=150.0, away_points=90.0, winner_roster_id=rosters[0].id)
+    await create_matchup(db_session, season, rosters[2], rosters[0], week=2, matchup_id=1,
+                         home_points=70.0, away_points=140.0, winner_roster_id=rosters[0].id)
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/power-rankings/2024")
+    assert resp.status_code == 200
+    scores = {t["user_id"]: t["current_season_score"] for t in resp.json()["rankings"]}
+    # u1 (highest points) outscores u3 (lowest points) on current-season score
+    assert scores["u1"] > scores["u3"]
