@@ -395,137 +395,103 @@ async def test_draft_grades_response_has_all_fields(client, db_session):
     assert "position" in pick
     assert "team" in pick
     assert "weighted_points" in pick
-    assert "round_multiplier" in pick
+    assert "expected_points" in pick
     assert "starter_weeks" in pick
     assert "bench_weeks" in pick
     assert "total_weeks" in pick
 
 
-async def test_rookie_draft_round_multiplier(client, db_session):
-    """Rookie drafts apply a round-based multiplier to pick values.
+async def test_draft_grade_measures_actual_vs_expected(client, db_session):
+    """Grades reflect production relative to the per-round baseline for the
+    picks an owner held, not raw total value.
 
-    Round 1: 0.75x, Round 2: 1.00x, Round 3: 1.35x, Round 4: 1.75x.
-    Two players scoring the same raw points should have different adjusted
-    values based on the round they were drafted in.
+    Two owners each hold one round-1 pick and one round-4 pick, so their
+    expected values are identical. The owner whose picks outscore the other's
+    must grade higher, and the round-1 baseline (avg of both R1 picks) is
+    reflected in each pick's expected_points.
     """
     draft, season, r1, r2, u1, u2 = await _setup_basic_draft(
         db_session, year=2023, rounds=4
     )
 
-    # One player per round for user1 (roster 1)
-    p1 = await create_player(
-        db_session, id="p1", full_name="Round 1 Pick", position="WR", team="KC"
-    )
-    p2 = await create_player(
-        db_session, id="p2", full_name="Round 4 Pick", position="RB", team="SF"
-    )
-    # user2 gets filler picks so they participate in the draft
-    p3 = await create_player(
-        db_session, id="p3", full_name="Filler 1", position="WR", team="BUF"
-    )
-    p4 = await create_player(
-        db_session, id="p4", full_name="Filler 2", position="WR", team="DAL"
-    )
+    # user1's picks (roster 1): a strong R1, weak R4
+    p1 = await create_player(db_session, id="p1", full_name="Strong R1", position="WR", team="KC")
+    p2 = await create_player(db_session, id="p2", full_name="Weak R4", position="RB", team="SF")
+    # user2's picks (roster 2): weak R1, weak R4
+    p3 = await create_player(db_session, id="p3", full_name="Weak R1", position="WR", team="BUF")
+    p4 = await create_player(db_session, id="p4", full_name="Weak R4b", position="WR", team="DAL")
 
-    # user1: p1 in round 1, p2 in round 4
-    # user2: p3 in round 1 (pick 2), p4 in round 4 (pick 2)
-    await _add_draft_pick(db_session, draft, 1, 1, 1, p1)
-    await _add_draft_pick(db_session, draft, 1, 2, 2, p3)
-    await _add_draft_pick(db_session, draft, 4, 1, 2, p4)
-    await _add_draft_pick(db_session, draft, 4, 2, 1, p2)
+    await _add_draft_pick(db_session, draft, 1, 1, 1, p1)   # user1 R1
+    await _add_draft_pick(db_session, draft, 1, 2, 2, p3)   # user2 R1
+    await _add_draft_pick(db_session, draft, 4, 1, 2, p4)   # user2 R4
+    await _add_draft_pick(db_session, draft, 4, 2, 1, p2)   # user1 R4
 
-    # Both p1 and p2 score identical raw points (10 pts/week, 3 weeks, starter)
-    # Raw weighted value = 10 * 1.5 * 3 = 45 for each
-    # After round multiplier:
-    #   p1 (round 1): 45 * 0.75 = 33.75
-    #   p2 (round 4): 45 * 1.75 = 78.75
+    # p1 scores big; p2/p3/p4 score little
     for wk in [1, 2, 3]:
-        await _add_player_points(db_session, season, r1, p1, wk, 10.0, is_starter=True)
-        await _add_player_points(db_session, season, r1, p2, wk, 10.0, is_starter=True)
-        await _add_player_points(db_session, season, r2, p3, wk, 10.0, is_starter=True)
-        await _add_player_points(db_session, season, r2, p4, wk, 10.0, is_starter=True)
+        await _add_player_points(db_session, season, r1, p1, wk, 20.0, is_starter=True)
+        await _add_player_points(db_session, season, r1, p2, wk, 2.0, is_starter=True)
+        await _add_player_points(db_session, season, r2, p3, wk, 2.0, is_starter=True)
+        await _add_player_points(db_session, season, r2, p4, wk, 2.0, is_starter=True)
 
     await db_session.flush()
 
     response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=rookie")
     assert response.status_code == 200
-    data = response.json()
-    assert len(data["drafts"]) == 1
+    owners = {o["user_id"]: o for o in response.json()["drafts"][0]["owners"]}
 
-    owner1 = next(
-        o for o in data["drafts"][0]["owners"] if o["user_id"] == "user1"
-    )
+    # user1 held a strong R1 → beats expected; user2's identical slots lag
+    assert owners["user1"]["value_vs_average"] > 1.0
+    assert owners["user2"]["value_vs_average"] < 1.0
+    assert owners["user1"]["grade"] != owners["user2"]["grade"]
 
-    picks_by_round = {p["round"]: p for p in owner1["picks"]}
+    # No round multipliers anymore
+    for o in owners.values():
+        for pick in o["picks"]:
+            assert "round_multiplier" not in pick
+            assert "expected_points" in pick
 
-    r1_pick = picks_by_round[1]
-    r4_pick = picks_by_round[4]
-
-    # Multipliers should be reflected in the response
-    assert r1_pick["round_multiplier"] == 0.75
-    assert r4_pick["round_multiplier"] == 1.75
-
-    # Round 4 pick should have significantly higher adjusted value
-    # despite identical raw scoring
-    assert r4_pick["weighted_points"] > r1_pick["weighted_points"]
-    assert abs(r4_pick["weighted_points"] - 78.75) < 0.01
-    assert abs(r1_pick["weighted_points"] - 33.75) < 0.01
+    # R1 baseline = avg of p1 (20*1.5*3=90) and p3 (2*1.5*3=9) = 49.5;
+    # both R1 picks carry that as their expected_points.
+    u1_r1 = next(p for p in owners["user1"]["picks"] if p["round"] == 1)
+    assert abs(u1_r1["expected_points"] - 49.5) < 0.01
 
 
-async def test_startup_draft_no_round_multiplier(client, db_session):
-    """Startup drafts (20+ rounds) should NOT apply round multipliers.
+async def test_draft_grade_ignores_pick_volume(client, db_session):
+    """More picks doesn't inflate the grade when per-pick production is equal.
 
-    All picks should have round_multiplier = 1.0 regardless of round.
+    user1 holds 4 picks and user2 holds 1, but every pick produces the same.
+    Both should grade equally (share ~1.0) even though user1's total value is
+    4x user2's — the exact scenario the old total-vs-average method got wrong.
     """
-    league = await create_league(db_session)
-    season = await create_season(
-        db_session, league, year=2020, regular_season_weeks=14
-    )
-    u1 = await create_user(
-        db_session, id="user1", username="owner1", display_name="Owner One"
-    )
-    u2 = await create_user(
-        db_session, id="user2", username="owner2", display_name="Owner Two"
-    )
-    r1 = await create_roster(db_session, season, u1, roster_id=1)
-    r2 = await create_roster(db_session, season, u2, roster_id=2)
-
-    draft = await create_draft(
-        db_session,
-        season,
-        id="draft_startup_2020",
-        year=2020,
-        type="linear",
-        status="complete",
-        rounds=25,  # startup draft
-        draft_order={"1": 1, "2": 2},
+    draft, season, r1, r2, u1, u2 = await _setup_basic_draft(
+        db_session, year=2023, rounds=4
     )
 
-    p1 = await create_player(
-        db_session, id="p1", full_name="Early Pick", position="WR", team="KC"
-    )
-    p2 = await create_player(
-        db_session, id="p2", full_name="Late Pick", position="RB", team="SF"
-    )
+    # user1: one pick in each of rounds 1-4, all scoring 10 pts/wk
+    for rnd in [1, 2, 3, 4]:
+        p = await create_player(db_session, id=f"a{rnd}", full_name=f"A{rnd}", position="WR", team="KC")
+        await _add_draft_pick(db_session, draft, rnd, 1, 1, p)
+        for wk in [1, 2, 3]:
+            await _add_player_points(db_session, season, r1, p, wk, 10.0, is_starter=True)
 
-    # user1 gets a round 1 pick, user2 gets a round 20 pick
-    await _add_draft_pick(db_session, draft, 1, 1, 1, p1)
-    await _add_draft_pick(db_session, draft, 20, 2, 2, p2)
-
+    # user2: a single round-1 pick scoring the same 10 pts/wk
+    b1 = await create_player(db_session, id="b1", full_name="B1", position="WR", team="SF")
+    await _add_draft_pick(db_session, draft, 1, 2, 2, b1)
     for wk in [1, 2, 3]:
-        await _add_player_points(db_session, season, r1, p1, wk, 10.0, is_starter=True)
-        await _add_player_points(db_session, season, r2, p2, wk, 10.0, is_starter=True)
+        await _add_player_points(db_session, season, r2, b1, wk, 10.0, is_starter=True)
 
     await db_session.flush()
 
-    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=startup")
+    response = await client.get(f"{LEAGUE_PREFIX}/draft-grades?draft_type=rookie")
     assert response.status_code == 200
-    data = response.json()
-    assert len(data["drafts"]) == 1
+    owners = {o["user_id"]: o for o in response.json()["drafts"][0]["owners"]}
 
-    for owner in data["drafts"][0]["owners"]:
-        for pick in owner["picks"]:
-            assert pick["round_multiplier"] == 1.0
+    # user1 has 4x the total value (4 picks vs 1) ...
+    assert owners["user1"]["total_value"] > owners["user2"]["total_value"] * 3
+    # ... but both drafted exactly to expectation for their slots -> same grade
+    assert owners["user1"]["grade"] == owners["user2"]["grade"]
+    assert abs(owners["user1"]["value_vs_average"] - 1.0) < 0.01
+    assert abs(owners["user2"]["value_vs_average"] - 1.0) < 0.01
 
 
 async def test_draft_grades_skips_empty_draft(client, db_session):

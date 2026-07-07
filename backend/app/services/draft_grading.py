@@ -30,31 +30,18 @@ from app.models import (
 STARTER_WEIGHT = 1.5
 BENCH_WEIGHT = 0.1
 
-# Round multipliers for rookie drafts only.
-# Later-round picks get more credit (finding a gem is harder);
-# first-round picks get slightly less (they're expected to produce).
-ROOKIE_ROUND_MULTIPLIERS = {
-    1: 0.75,
-    2: 1.00,
-    3: 1.35,
-    4: 1.75,
-}
-ROOKIE_ROUND_MULTIPLIER_DEFAULT = 2.00  # Round 5+
-
-
-def _get_rookie_round_multiplier(round_num: int) -> float:
-    """Return the round-based credit multiplier for rookie drafts."""
-    return ROOKIE_ROUND_MULTIPLIERS.get(round_num, ROOKIE_ROUND_MULTIPLIER_DEFAULT)
-
 
 def _value_share_to_grade(share: float) -> str:
-    """Map a 0.0-1.0 value share to a letter grade.
+    """Map an actual/expected value ratio to a letter grade.
 
-    For drafts, we compare each owner's total value to the average.
-    share = owner_value / average_value
-    - 1.0 = average draft (C grade)
-    - >1.0 = above average
-    - <1.0 = below average
+    share = owner_actual_value / owner_expected_value, where expected is the
+    sum of the per-round average value of the picks the owner held in THIS
+    draft. 1.0 means the owner's picks produced exactly what picks in those
+    same rounds averaged; >1.0 means they beat expectation for their slots.
+
+    Because expectation already accounts for which rounds an owner picked in,
+    this rewards hit rate rather than sheer pick volume, and needs no
+    round multipliers (each round is measured against its own baseline).
     """
     if share >= 1.80:
         return "A+"
@@ -388,36 +375,50 @@ class DraftGradingService:
                 if info:
                     picks_by_owner[info["user_id"]].append(pick)
 
-        # Rookie drafts use a round-based multiplier: later rounds earn
-        # more credit (steals), earlier rounds earn slightly less (expected).
-        is_rookie_draft = draft.rounds < 20
+        # Pass 1: compute each pick's actual value and collect per-round values
+        # so we can build this draft's round baselines (average value of a pick
+        # in each round). Comparing within a single draft keeps every pick on
+        # the same elapsed-time window.
+        pick_value: Dict[int, Tuple[float, int, int]] = {}
+        round_values: Dict[int, List[float]] = defaultdict(list)
+        for pick in picks:
+            if not (pick.roster_id and pick.player_id):
+                continue
+            info = roster_info_map.get(pick.roster_id)
+            if not info:
+                continue
+            val, s_wks, b_wks = self._calculate_player_value(
+                pick.player_id,
+                info["user_id"],
+                draft_year,
+                points_index,
+                user_roster_map,
+            )
+            pick_value[pick.pick_no] = (val, s_wks, b_wks)
+            if pick.round:
+                round_values[pick.round].append(val)
 
-        # Calculate value for each owner
+        round_baseline: Dict[int, float] = {
+            rnd: (sum(vals) / len(vals) if vals else 0.0)
+            for rnd, vals in round_values.items()
+        }
+
+        # Pass 2: per owner, actual value vs. expected value (sum of the
+        # round baselines for the picks they held).
         owner_data: List[dict] = []
-        total_value_sum = 0.0
 
         for user_id, user_picks in picks_by_owner.items():
-            total_value = 0.0
+            actual_value = 0.0
+            expected_value = 0.0
             pick_details = []
 
             for pick in user_picks:
                 pinfo = player_map.get(pick.player_id, {})
-                val, s_wks, b_wks = self._calculate_player_value(
-                    pick.player_id,
-                    user_id,
-                    draft_year,
-                    points_index,
-                    user_roster_map,
-                )
+                val, s_wks, b_wks = pick_value.get(pick.pick_no, (0.0, 0, 0))
+                baseline = round_baseline.get(pick.round, 0.0)
 
-                if is_rookie_draft and pick.round:
-                    round_multiplier = _get_rookie_round_multiplier(pick.round)
-                    adjusted_val = val * round_multiplier
-                else:
-                    round_multiplier = 1.0
-                    adjusted_val = val
-
-                total_value += adjusted_val
+                actual_value += val
+                expected_value += baseline
                 pick_details.append({
                     "pick_no": pick.pick_no,
                     "round": pick.round,
@@ -425,8 +426,8 @@ class DraftGradingService:
                     "player_name": pinfo.get("full_name", f"Player {pick.player_id}"),
                     "position": pinfo.get("position"),
                     "team": pinfo.get("team"),
-                    "weighted_points": round(adjusted_val, 2),
-                    "round_multiplier": round_multiplier,
+                    "weighted_points": round(val, 2),
+                    "expected_points": round(baseline, 2),
                     "starter_weeks": s_wks,
                     "bench_weeks": b_wks,
                     "total_weeks": s_wks + b_wks,
@@ -439,21 +440,24 @@ class DraftGradingService:
                 "user_id": user_id,
                 "username": info.get("username", "Unknown"),
                 "avatar": info.get("avatar"),
-                "total_value": round(total_value, 2),
+                "total_value": round(actual_value, 2),
+                "expected_value": round(expected_value, 2),
                 "num_picks": len(user_picks),
-                "avg_value_per_pick": round(total_value / len(user_picks), 2) if user_picks else 0,
+                "avg_value_per_pick": round(actual_value / len(user_picks), 2) if user_picks else 0,
                 "picks": pick_details,
             })
-            total_value_sum += total_value
 
-        # Calculate average value and assign grades
+        total_value_sum = sum(o["total_value"] for o in owner_data)
         num_owners = len(owner_data)
         avg_value = total_value_sum / num_owners if num_owners > 0 else 0
 
         for owner in owner_data:
-            if avg_value > 0:
-                share = owner["total_value"] / avg_value
+            expected = owner["expected_value"]
+            if expected > 0:
+                share = owner["total_value"] / expected
             else:
+                # No production expected for these slots yet (e.g. current-year
+                # draft before games) — treat as neutral rather than punishing.
                 share = 1.0
             owner["value_vs_average"] = round(share, 4)
             owner["grade"] = _value_share_to_grade(share)
