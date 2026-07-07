@@ -554,7 +554,8 @@ async def _calculate_roster_value_score(
 
 
 async def _calculate_historical_score(roster: Roster, db: AsyncSession) -> float:
-    """Calculate historical performance score (20 points max)."""
+    """Calculate historical performance score (18 points max: 8 championships
+    + 8 playoff appearances + 2 flat baseline)."""
     score = 0.0
 
     result = await db.execute(
@@ -565,48 +566,14 @@ async def _calculate_historical_score(roster: Roster, db: AsyncSession) -> float
     championships = sum(1 for award in awards if award.award_type == "champion")
     playoff_appearances = len([a for a in awards if a.award_type in ["champion", "division_winner"]])
 
+    # Championships up to 8, playoff appearances up to 8, plus a flat 2-point
+    # baseline every team receives (a rank-neutral offset, so historical
+    # contributes 2-18 in practice).
     score += min(8, championships * 5)
     score += min(8, playoff_appearances * 2.67)
-    score += 2  # consistency baseline
+    score += 2  # baseline offset (same for every team)
 
     return score
-
-
-async def _calculate_recent_form(
-    roster: Roster, season: Season, db: AsyncSession
-) -> float:
-    """Calculate recent form score based on last 3 weeks (5 points max)."""
-    if not season.regular_season_weeks or season.regular_season_weeks < 3:
-        return 0.0
-
-    weeks_to_check = range(
-        max(1, season.regular_season_weeks - 2), season.regular_season_weeks + 1
-    )
-
-    result = await db.execute(
-        select(Matchup)
-        .where(
-            Matchup.season_id == season.id,
-            Matchup.week.in_(weeks_to_check),
-            Matchup.match_type == "regular",
-        )
-        .where(
-            (Matchup.home_roster_id == roster.id)
-            | (Matchup.away_roster_id == roster.id)
-        )
-    )
-    recent_matchups = result.scalars().all()
-
-    if not recent_matchups:
-        return 0.0
-
-    wins = 0
-    for matchup in recent_matchups:
-        if matchup.winner_roster_id == roster.id:
-            wins += 1
-
-    win_pct = wins / len(recent_matchups)
-    return win_pct * 5
 
 
 def _calculate_avg_roster_age(roster: Roster, players_dict: Dict[str, Player]) -> float:
@@ -729,12 +696,13 @@ async def _calculate_player_power_score(
     """Calculate individual player power score: KTC + league production + age.
 
     Formula (max 30):
-      - League production vs position average (max 14): how does this player score
-        compared to other players at their position in *this* league's format
-      - KTC dynasty value (max 8): market-consensus dynasty worth
+      - KTC dynasty value (max 12): market-consensus dynasty worth
+      - League production vs position average (max 10): how does this player
+        score compared to others at their position in *this* league's format
       - Age (max 8): dynasty longevity tiebreaker
 
-    Fallback when no KTC value: position (max 5) replaces KTC component.
+    Fallback when no KTC value: a low fixed floor (1.5) replaces the KTC
+    component, since KTC not ranking a player is itself a weak signal.
     """
     # --- Age component (max 8) ---
     if player.age:
