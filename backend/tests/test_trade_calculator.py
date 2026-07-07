@@ -192,3 +192,80 @@ async def test_h2h_trades_unknown_user_returns_empty(client: AsyncClient, db_ses
         data = resp.json()
         assert "trades" in data
         assert data["trades"] == []
+
+
+# ---------------------------------------------------------------------------
+# Classification consistency with the Roster Analysis page
+# ---------------------------------------------------------------------------
+
+async def test_owners_classification_matches_roster_analysis(client, db_session):
+    """A team's classification must be identical on the trade calculator and
+    the roster analysis page (same scoring inputs incl. KTC + position avg)."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2024)
+
+    # Three teams with players that have KTC values, so the KTC component
+    # (previously ignored by the owners endpoint) actually affects scores.
+    for i in range(1, 4):
+        u = await create_user(db_session, id=f"u{i}", username=f"o{i}", display_name=f"O{i}")
+        await create_roster(db_session, season, u, roster_id=i, players=[f"p{i}"])
+        pl = await create_player(db_session, id=f"p{i}", full_name=f"P{i}", position="QB", age=24 + i)
+        db_session.add(PlayerValue(player_id=pl.id, value=9000 - i * 3000, superflex_value=9000 - i * 3000,
+                                   position="QB", source="ktc", ktc_name=f"P{i}"))
+    await db_session.commit()
+
+    owners_resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/owners")
+    ra_resp = await client.get(f"{LEAGUE_PREFIX}/roster-analysis")
+    assert owners_resp.status_code == 200 and ra_resp.status_code == 200
+
+    owners_cls = {o["roster_id"]: o["classification"] for o in owners_resp.json()["owners"]}
+    ra_cls = {t["roster_id"]: t["classification"] for t in ra_resp.json()["teams"]}
+    assert owners_cls == ra_cls
+
+
+# ---------------------------------------------------------------------------
+# Preseason pick tiers fall back to prior-season standings
+# ---------------------------------------------------------------------------
+
+async def test_roster_picks_preseason_uses_prior_standings(client, db_session, monkeypatch):
+    """In the preseason (all records 0-0), pick tiers derive from the prior
+    season's final standings, not the empty current records."""
+    from app.services.sleeper_client import sleeper_client
+
+    league = await create_league(db_session)
+    prior = await create_season(db_session, league, year=2025)
+    current = await create_season(db_session, league, year=2026)
+
+    # Prior season: roster 1 was worst (2-12), roster 2 was best (12-2)
+    u1 = await create_user(db_session, id="u1", username="o1", display_name="Worst Last Year")
+    u2 = await create_user(db_session, id="u2", username="o2", display_name="Best Last Year")
+    await create_roster(db_session, prior, u1, roster_id=1, wins=2, losses=12)
+    await create_roster(db_session, prior, u2, roster_id=2, wins=12, losses=2)
+    # Current season: both 0-0 (preseason)
+    await create_roster(db_session, current, u1, roster_id=1, wins=0, losses=0)
+    await create_roster(db_session, current, u2, roster_id=2, wins=0, losses=0)
+    await db_session.commit()
+
+    async def _no_traded_picks(league_id=None):
+        return []
+
+    async def _no_drafts(league_id=None):
+        return []
+
+    monkeypatch.setattr(sleeper_client, "get_traded_picks", _no_traded_picks)
+    monkeypatch.setattr(sleeper_client, "get_drafts", _no_drafts)
+
+    # Worst prior record -> earliest pick slot; record shown reflects last
+    # season (2-12), not the current 0-0.
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster-picks/u1")
+    assert resp.status_code == 200
+    own1 = [p for p in resp.json()["picks"] if p["own_pick"]]
+    assert own1, "expected the owner's own future picks"
+    assert all(p["original_record"] == "2-12" for p in own1)
+    assert all(p["estimated_pick_slot"] == 1 for p in own1)  # worst -> picks first
+
+    # Best prior record -> latest pick slot (2 of 2)
+    resp2 = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster-picks/u2")
+    own2 = [p for p in resp2.json()["picks"] if p["own_pick"]]
+    assert all(p["original_record"] == "12-2" for p in own2)
+    assert all(p["estimated_pick_slot"] == 2 for p in own2)

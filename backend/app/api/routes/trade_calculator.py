@@ -89,7 +89,12 @@ async def get_owners(
 
     player_stats = await _calculate_player_stats(list(all_player_ids), db, league_id) if all_player_ids else {}
 
-    from app.api.routes.power_rankings import _calculate_avg_roster_age, _calculate_player_power_score
+    from app.api.routes.power_rankings import (
+        _calculate_avg_roster_age,
+        _calculate_player_power_score,
+        _calculate_position_averages,
+        _fetch_ktc_values,
+    )
     from app.models import Player as PlayerModel
 
     players_result = await db.execute(
@@ -97,23 +102,29 @@ async def get_owners(
     ) if all_player_ids else None
     players_dict = {p.id: p for p in (players_result.scalars().all() if players_result else [])}
 
+    # Use the SAME scoring inputs as the Roster Analysis page so a team's
+    # classification (Win Now / Rebuilding / ...) matches across both tools.
+    ktc_values = await _fetch_ktc_values(list(all_player_ids), db) if all_player_ids else {}
+    position_averages = _calculate_position_averages(list(players_dict.values()), player_stats)
+
     # Compute per-roster total_score and avg_age
     roster_scores: list[float] = []
     roster_data: list[tuple] = []
     for roster, user in rows:
         player_ids = roster.players or []
         total_score = 0.0
-        ages = []
         for pid in player_ids:
             p = players_dict.get(pid)
             if not p:
                 continue
             ppg = player_stats.get(pid, 0.0)
-            score = (await _calculate_player_power_score(p, ppg, db)).power_score
+            ktc_value = ktc_values.get(pid, 0.0)
+            pos_avg = position_averages.get(p.position or "OTH", 0.0)
+            score = (await _calculate_player_power_score(
+                p, ppg, db, ktc_value=ktc_value, position_avg=pos_avg
+            )).power_score
             total_score += score
-            if p.age:
-                ages.append(p.age)
-        avg_age = sum(ages) / len(ages) if ages else 0.0
+        avg_age = _calculate_avg_roster_age(roster, players_dict)
         roster_data.append((roster, user, total_score, avg_age))
         roster_scores.append(total_score)
 
@@ -401,6 +412,21 @@ async def get_roster_picks(
 
     if user_roster_id is None:
         raise HTTPException(status_code=404, detail="Owner not found in current season")
+
+    # In the preseason every current-season record is 0-0, which makes the
+    # pick tiers below effectively random. Fall back to each owner's PRIOR
+    # season final record so tiers reflect real standings until games are played.
+    games_played = sum(r["wins"] + r["losses"] for r in roster_info.values())
+    if games_played == 0:
+        prior = await db.execute(
+            select(Roster.roster_id, Roster.wins, Roster.losses)
+            .join(Season, Roster.season_id == Season.id)
+            .where(Season.group_id == league_id, Season.year == season.year - 1)
+        )
+        prior_by_rid = {rid: (w or 0, l or 0) for rid, w, l in prior.all()}
+        for rid, info in roster_info.items():
+            if rid in prior_by_rid:
+                info["wins"], info["losses"] = prior_by_rid[rid]
 
     # ── 2. Rank teams by record (worst → picks earliest → "early") ─────────
     total_teams = len(roster_info)
