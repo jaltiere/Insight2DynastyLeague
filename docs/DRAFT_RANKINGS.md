@@ -2,23 +2,25 @@
 
 ## Overview
 
-The draft rankings system evaluates each owner's draft performance by analyzing the **actual performance** of all players they drafted after the draft date. Each owner receives a letter grade (A+ through F) based on their total draft value compared to the league average.
+The draft rankings system evaluates each owner's draft performance by analyzing the **actual performance** of all players they drafted after the draft date. Each owner receives a letter grade (A+ through F) based on how their picks' production compares to the **expected production for the draft slots they held** — the average value of picks in those same rounds of that same draft.
 
 **Key Principle**: Grades are retrospective, not predictive. We measure what actually happened, not what was expected at draft time.
 
+**Why actual-vs-expected, not total-vs-average?** An owner holding 8 rookie picks will almost always out-total an owner holding 2, regardless of skill. Grading each owner against the expected value of the specific slots they held rewards *hit rate* rather than pick volume: two round-1 picks are measured against what round-1 picks in that draft averaged, and a single late-round steal is measured against what late rounds typically return.
+
 ## Grading Scale
 
-The grading scale is centered around 100% (average draft performance) to create a balanced distribution:
+The grading scale is centered on 100%, where 100% = the owner's picks produced exactly what picks in those same rounds averaged:
 
-| Grade | Value vs Average | Interpretation |
+| Grade | Actual vs Expected | Interpretation |
 |-------|-----------------|----------------|
 | **A+** | 180%+ | Elite draft performance |
 | **A** | 160-179% | Excellent draft |
 | **A-** | 140-159% | Very good draft |
 | **B+** | 120-139% | Good draft |
-| **B** | 110-119% | Above average draft |
-| **B-** | 90-109% | Average draft |
-| **C+** | 80-89% | Below average draft |
+| **B** | 110-119% | Above expectation |
+| **B-** | 90-109% | Met expectation for the slots held |
+| **C+** | 80-89% | Below expectation |
 | **C** | 70-79% | Poor draft |
 | **C-** | 60-69% | Very poor draft |
 | **D+** | 50-59% | Bad draft |
@@ -28,20 +30,20 @@ The grading scale is centered around 100% (average draft performance) to create 
 
 ### Example: Draft Outcomes
 
-**Average Draft** (100% of average):
-- Total value: 450 points
-- League average: 450 points
-- Grade: B- (right at average)
+**Met expectation** (100%):
+- Actual value: 450 points
+- Expected value for the slots held: 450 points
+- Grade: B- (drafted right to expectation)
 
-**Great Draft** (150% of average):
-- Total value: 675 points
-- League average: 450 points
-- Grade: A- (50% above average)
+**Great Draft** (150%):
+- Actual value: 675 points
+- Expected value for the slots held: 450 points
+- Grade: A- (50% above expectation)
 
-**Poor Draft** (60% of average):
-- Total value: 270 points
-- League average: 450 points
-- Grade: C- (40% below average)
+**Poor Draft** (60%):
+- Actual value: 270 points
+- Expected value for the slots held: 450 points
+- Grade: C- (40% below expectation)
 
 ## Algorithm Components
 
@@ -80,65 +82,59 @@ player_value = Σ (points × weight)
 - Weeks 9-17: Started, scored 14 pts/week = 14 × 1.5 × 9 = 189
 - Total value = **197 points**
 
-### 2. Round Multiplier (Rookie Drafts Only)
+### 2. Per-Round Baselines (Expected Value)
 
-For **rookie drafts** (< 20 rounds), each pick's weighted value is further
-adjusted by a round-based multiplier. Later-round picks receive more credit
-because finding a productive player in round 3 or 4 is a genuine steal,
-while round 1 picks are expected to produce.
-
-| Round | Multiplier | Rationale |
-|-------|-----------|-----------|
-| 1 | 0.75x | Expected to produce — slight penalty |
-| 2 | 1.00x | Neutral baseline |
-| 3 | 1.35x | Late-round value is impressive |
-| 4 | 1.75x | Genuine steal territory |
-| 5+ | 2.00x | Maximum bonus — extremely rare finds |
+Within each draft, we compute a **baseline** for every round: the average
+actual value of all picks made in that round of that draft.
 
 ```python
-# Rookie drafts only (draft.rounds < 20)
-adjusted_value = player_value * round_multiplier[pick.round]
+# For each round in this draft:
+round_baseline[r] = mean(player_value for every pick in round r)
 ```
 
-**This multiplier is NOT applied to startup drafts** (20+ rounds), where all
-picks have `round_multiplier = 1.0`.
+Because this compares picks only against others in the *same round of the
+same draft*, every pick shares the same elapsed-time window (a 2022 pick and
+a 2025 pick are never compared directly), and later rounds automatically
+carry lower baselines — so a late-round hit stands out without needing a
+hand-tuned round multiplier. (The older fixed round multipliers, e.g. 0.75x
+for round 1 up to 2.0x for round 5+, are no longer used; the per-round
+baseline encodes the same intuition from real data.)
 
-The `round_multiplier` field is included in each pick's response data so
-the UI can display why a pick has a given value.
+Each pick's `expected_points` field in the response is its round baseline,
+so the UI can show what a pick "should" have returned for its slot.
 
 ### 3. Draft Value Computation
 
-For each owner in each draft:
+For each owner in each draft, we sum both their actual production and the
+expected production for the slots they held:
 
 ```python
-owner_draft_value = 0
+actual_value = 0
+expected_value = 0
 
 for each_pick in owner's_picks:
-    player_value = Σ (weighted_points_after_draft)
-    # Apply round multiplier for rookie drafts
-    adjusted_value = player_value * round_multiplier (1.0 for startup)
-    owner_draft_value += adjusted_value
+    actual_value   += Σ (weighted_points_after_draft)   # this pick's value
+    expected_value += round_baseline[pick.round]         # its slot's baseline
 ```
 
-### 4. Average Calculation
+More picks raise `expected_value` too, so volume alone does not inflate the
+grade.
 
-Calculate the league average for the draft:
+### 4. Grade Assignment
 
-```python
-total_value = sum(owner_draft_value for all owners)
-num_owners = count of owners in draft
-average_value = total_value / num_owners
-```
-
-### 5. Grade Assignment
-
-Compare each owner to the average:
+Compare each owner's actual production to their expected production:
 
 ```python
 for each owner:
-    value_vs_average = owner_draft_value / average_value
+    value_vs_average = actual_value / expected_value   # 1.0 = met expectation
     grade = lookup_grade(value_vs_average)
 ```
+
+If `expected_value` is 0 (e.g. the current-year draft before any games are
+played), the owner is treated as neutral (share = 1.0) rather than penalized.
+
+> Note: the response field is still named `value_vs_average` for backward
+> compatibility, but it now represents the actual-vs-expected ratio.
 
 ## Draft Types
 
@@ -251,6 +247,7 @@ GET /api/{league_slug}/draft-grades?draft_type={type}&owner_id={id}
           "username": "Owner One",   // display_name if set, otherwise username
           "avatar": null,
           "total_value": 1875.8,
+          "expected_value": 1250.5,
           "num_picks": 25,
           "avg_value_per_pick": 75.0,
           "value_vs_average": 1.5000,
@@ -264,7 +261,7 @@ GET /api/{league_slug}/draft-grades?draft_type={type}&owner_id={id}
               "position": "WR",
               "team": "MIN",
               "weighted_points": 319.1,
-              "round_multiplier": 0.75,
+              "expected_points": 210.4,
               "starter_weeks": 65,
               "bench_weeks": 3,
               "total_weeks": 68
