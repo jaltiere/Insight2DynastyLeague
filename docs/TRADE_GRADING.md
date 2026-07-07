@@ -188,21 +188,31 @@ pick_value = actual_player_value
 
 The player drafted with the pick is treated like any other player in the trade, with full weighted scoring.
 
-#### 3b. Projected Picks (Future/Unused)
+#### 3b. Projected Picks (Future/Unresolved)
 
-For picks that haven't been used yet:
+For picks that haven't converted to a player yet — a genuine future pick,
+or one whose draft data isn't synced — we assign a **bounded** placeholder.
+A pick that has not become a player has produced nothing, so it is valued at
+roughly one season of its round's average production, discounted:
 
 ```python
 FUTURE_PICK_DISCOUNT = 0.7
+PROJECTED_PICK_HORIZON_WEEKS = 17   # one season
 
 pick_baseline = average weighted points per week for all players
                 historically drafted in this round
 
-weeks_estimate = weeks of data since trade
-                (accounts for multiple seasons if applicable)
-
-pick_value = pick_baseline × weeks_estimate × FUTURE_PICK_DISCOUNT
+pick_value = pick_baseline × PROJECTED_PICK_HORIZON_WEEKS × FUTURE_PICK_DISCOUNT
 ```
+
+**This value does not scale with how long ago the trade happened.** An
+earlier formula multiplied by *weeks since the trade*, which fabricated
+unbounded value for old unconverted picks (a pick from a trade three seasons
+ago accrued ~50 weeks of phantom production) while simultaneously
+*undervaluing* recently traded future picks (only a week or two of data). A
+fixed one-season horizon gives every unresolved pick the same sensible
+placeholder regardless of trade recency. Once the pick converts, the
+**resolved** branch above takes over with the drafted player's real points.
 
 #### Pick Baselines Calculation
 
@@ -225,10 +235,11 @@ round_N_baseline = average(ppw for all round N players)
 
 #### Example
 
-**2025 1st Round Pick** traded in Week 5 of 2024:
+**2025 1st Round Pick** traded in Week 5 of 2024 (still unconverted):
 - Round 1 baseline: 12.5 weighted points/week (historical average)
-- Weeks since trade: 20 weeks (rest of 2024 + 5 weeks of 2025)
-- Projected value: 12.5 × 20 × 0.7 = **175 points**
+- Bounded horizon: 17 weeks (one season)
+- Projected value: 12.5 × 17 × 0.7 = **148.75 points** (the same whether the
+  trade was last week or three seasons ago)
 
 If the pick is later used to draft Player X who scores 15 weighted pts/week for 30 weeks:
 - Actual value: 15 × 30 = **450 points**
@@ -255,7 +266,7 @@ for pick in picks_received:
     if pick.is_resolved:
         pick_value = drafted_player_value  # actual
     else:
-        pick_value = baseline × weeks × discount  # projected
+        pick_value = baseline × 17 × discount  # projected (bounded one season)
     side_value += pick_value
 ```
 
