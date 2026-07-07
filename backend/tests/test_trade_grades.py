@@ -729,3 +729,99 @@ async def test_trade_grades_full_career_credit_after_retrade(client, db_session)
     assert pb_detail["starter_weeks"] == 6, (
         f"Expected 6 starter weeks (full career), got {pb_detail['starter_weeks']}"
     )
+
+
+async def _draft_with_round4_baseline(db, league):
+    """Create a completed 2022 draft with one round-4 player who produced,
+    establishing a positive round-4 pick baseline. Returns weighted ppw."""
+    season = await create_season(db, league, year=2022)
+    u = await create_user(db, id="drafter", username="drafter", display_name="Drafter")
+    r = await create_roster(db, season, u, roster_id=9)
+    dp = await create_player(db, id="r4guy", full_name="R4 Guy", position="RB")
+    draft = await create_draft(db, season, id="draft_2022", year=2022,
+                               status="complete", rounds=4, draft_order={"9": 9})
+    await create_draft_pick(db, draft, pick_no=40, round=4, pick_in_round=1,
+                            roster_id=9, player_id=dp.id)
+    # 2 starter weeks at 10 pts -> weighted_total=30, weeks=2, ppw=15
+    for wk in (1, 2):
+        m = await create_matchup(db, season, r, r, week=wk, matchup_id=900 + wk,
+                                 home_points=10.0, away_points=0.0)
+        await create_matchup_player_point(db, m, r, dp, points=10.0, is_starter=True)
+    return 15.0  # expected round-4 ppw
+
+
+async def test_projected_pick_is_bounded_one_season(client, db_session):
+    """An unresolved future pick is valued at ppw * 17 * 0.7, not scaled by
+    weeks since the trade."""
+    league = await create_league(db_session)
+    ppw = await _draft_with_round4_baseline(db_session, league)
+
+    season = await create_season(db_session, league, year=2024)
+    u1 = await create_user(db_session, id="u1", username="a", display_name="A")
+    u2 = await create_user(db_session, id="u2", username="b", display_name="B")
+    await create_roster(db_session, season, u1, roster_id=1)
+    await create_roster(db_session, season, u2, roster_id=2)
+    give = await create_player(db_session, id="give", full_name="Given", position="WR")
+
+    # Trade a 2027 R4 pick (draft doesn't exist -> unresolved/projected)
+    await create_transaction(
+        db_session, season, id="t_proj", type="trade", status="complete",
+        week=3, roster_ids=[1, 2], adds={"give": 1}, drops={"give": 2},
+        picks=[{"season": 2027, "round": 4, "roster_id": 1,
+                "previous_owner_id": 1, "owner_id": 2}],
+        status_updated=1700000040000,
+    )
+    await db_session.flush()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
+    assert resp.status_code == 200
+    trade = next(t for t in resp.json()["trades"] if t["trade_id"] == "t_proj")
+    side = next(s for s in trade["sides"] if s["roster_id"] == 2)
+    pick = side["assets_received"]["draft_picks"][0]
+    assert pick["status"] == "projected"
+    assert abs(pick["value"] - ppw * 17 * 0.7) < 0.01  # 178.5
+
+
+async def test_projected_pick_value_independent_of_trade_age(client, db_session):
+    """The same unresolved future pick traded early vs. late gets equal value.
+
+    The old formula scaled by weeks-since-trade, so an older trade's pick was
+    worth far more; the bounded horizon makes them equal.
+    """
+    league = await create_league(db_session)
+    await _draft_with_round4_baseline(db_session, league)
+
+    # Old trade (2023) and recent trade (2026), each of a 2027 R4 pick.
+    # Post-trade points through 2026 wk12 give _weeks_since_trade very
+    # different values for the two trades — under the old formula that made
+    # the older pick worth far more.
+    for yr, tid, ts in [(2023, "t_old", 1650000000000), (2026, "t_new", 1750000000000)]:
+        season = await create_season(db_session, league, year=yr)
+        ua = await create_user(db_session, id=f"ua{yr}", username=f"a{yr}", display_name=f"A{yr}")
+        ub = await create_user(db_session, id=f"ub{yr}", username=f"b{yr}", display_name=f"B{yr}")
+        ra = await create_roster(db_session, season, ua, roster_id=1)
+        await create_roster(db_session, season, ub, roster_id=2)
+        pl = await create_player(db_session, id=f"g{yr}", full_name=f"G{yr}", position="WR")
+        await create_transaction(
+            db_session, season, id=tid, type="trade", status="complete",
+            week=2, roster_ids=[1, 2], adds={f"g{yr}": 1}, drops={f"g{yr}": 2},
+            picks=[{"season": 2027, "round": 4, "roster_id": 1,
+                    "previous_owner_id": 1, "owner_id": 2}],
+            status_updated=ts,
+        )
+        # Traded player accumulates points post-trade, extending the data window
+        for wk in range(3, 13):
+            m = await create_matchup(db_session, season, ra, ra, week=wk,
+                                     matchup_id=500 + wk, home_points=8.0, away_points=0.0)
+            await create_matchup_player_point(db_session, m, ra, pl, points=8.0, is_starter=True)
+    await db_session.flush()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-grades")
+    trades = {t["trade_id"]: t for t in resp.json()["trades"]}
+
+    def proj_value(tid):
+        side = next(s for s in trades[tid]["sides"] if s["roster_id"] == 2)
+        return side["assets_received"]["draft_picks"][0]["value"]
+
+    assert proj_value("t_old") == proj_value("t_new")
+    assert proj_value("t_old") > 0

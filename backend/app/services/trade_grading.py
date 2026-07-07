@@ -26,8 +26,15 @@ from app.models import (
 STARTER_WEIGHT = 1.5
 BENCH_WEIGHT = 0.1
 
-# Discount applied to projected (unused) draft pick values
+# Discount applied to projected (unresolved) draft pick values
 FUTURE_PICK_DISCOUNT = 0.7
+
+# Horizon (in weeks) used to value an unresolved pick. Trade grades are
+# retrospective and denominated in accumulated weighted points; a pick that
+# has not converted to a player has produced nothing, so it gets a modest,
+# BOUNDED placeholder — roughly one season of its round's average production —
+# rather than scaling with how long ago the trade happened.
+PROJECTED_PICK_HORIZON_WEEKS = 17
 
 # Replacement-factor window (weeks before/after trade)
 REPLACEMENT_WINDOW = 4
@@ -745,12 +752,15 @@ class TradeGradingService:
                         resolved_player_id, {}
                     ).get("full_name", f"Player {resolved_player_id}")
                 else:
-                    # Pick not yet used — project with discount
+                    # Pick unresolved (future pick, or draft data not yet
+                    # synced). Value it at a bounded one-season placeholder of
+                    # its round's average production, discounted — not scaled
+                    # by weeks since the trade, which fabricated unbounded
+                    # value for picks that never produced.
                     ppw = pick_baselines.get(pick_round, 0.0)
-                    weeks_est = self._weeks_since_trade(
-                        trade_year, trade_week, points_index
+                    pick_value = (
+                        ppw * PROJECTED_PICK_HORIZON_WEEKS * FUTURE_PICK_DISCOUNT
                     )
-                    pick_value = ppw * max(weeks_est, 1) * FUTURE_PICK_DISCOUNT
                     status = "projected"
                     drafted_player = None
 
