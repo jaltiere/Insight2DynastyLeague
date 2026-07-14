@@ -364,3 +364,55 @@ async def test_current_season_score_percentile_differentiates_teams(
     scores = {t["user_id"]: t["current_season_score"] for t in resp.json()["rankings"]}
     # u1 (highest points) outscores u3 (lowest points) on current-season score
     assert scores["u1"] > scores["u3"]
+
+
+@pytest.mark.anyio
+async def test_is_startable_position_aware_age_ceilings():
+    """Veteran QBs/WRs/TEs stay startable past 30; RBs don't (position-aware)."""
+    from app.api.routes.power_rankings import _is_startable
+    from app.models import Player as P
+
+    def mk(pos, age):
+        return P(id=f"{pos}{age}", position=pos, age=age, status="Active")
+
+    assert _is_startable(mk("QB", 31)) is True
+    assert _is_startable(mk("RB", 31)) is False
+    assert _is_startable(mk("WR", 31)) is True
+    assert _is_startable(mk("WR", 32)) is False
+    assert _is_startable(mk("TE", 32)) is True
+    assert _is_startable(mk("QB", 38)) is False
+    assert _is_startable(mk("K", 25)) is False
+    assert _is_startable(P(id="x", position="RB", age=None, status="Active")) is True
+    assert _is_startable(P(id="y", position="QB", age=24, status="Injured Reserve")) is False
+
+
+@pytest.mark.anyio
+async def test_historical_score_weights_and_max():
+    """Championships up to 10, playoff appearances up to 10, no baseline, max 20."""
+    from app.api.routes.power_rankings import _calculate_historical_score
+    from app.models import SeasonAward
+
+    class _FakeResult:
+        def __init__(self, awards): self._awards = awards
+        def scalars(self): return self
+        def all(self): return self._awards
+
+    class _FakeDB:
+        def __init__(self, awards): self._awards = awards
+        async def execute(self, _q): return _FakeResult(self._awards)
+
+    def champ(): return SeasonAward(season_id=1, user_id="u", award_type="champion")
+    def div(): return SeasonAward(season_id=1, user_id="u", award_type="division_winner")
+
+    class _R:
+        user_id = "u"
+
+    # No awards -> 0 (no flat baseline anymore)
+    assert await _calculate_historical_score(_R(), _FakeDB([])) == 0.0
+    # 2 championships: champ cap 10; they're also 2 playoff appearances
+    # -> min(10, 2*3.5)=7 -> 17
+    assert await _calculate_historical_score(_R(), _FakeDB([champ(), champ()])) == 17.0
+    # 2 champs + 1 division title: champ 10, 3 appearances -> min(10, 10.5)=10 -> 20 max
+    assert await _calculate_historical_score(_R(), _FakeDB([champ(), champ(), div()])) == 20.0
+    # 1 champ + 2 division titles: champ 5, 3 appearances -> 10 -> 15
+    assert await _calculate_historical_score(_R(), _FakeDB([champ(), div(), div()])) == 15.0
