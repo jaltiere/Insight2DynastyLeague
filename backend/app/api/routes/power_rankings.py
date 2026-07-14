@@ -546,8 +546,8 @@ async def _calculate_roster_value_score(
 
 
 async def _calculate_historical_score(roster: Roster, db: AsyncSession) -> float:
-    """Calculate historical performance score (18 points max: 8 championships
-    + 8 playoff appearances + 2 flat baseline)."""
+    """Calculate historical performance score (20 points max: 10 for
+    championships + 10 for playoff appearances)."""
     score = 0.0
 
     result = await db.execute(
@@ -558,12 +558,14 @@ async def _calculate_historical_score(roster: Roster, db: AsyncSession) -> float
     championships = sum(1 for award in awards if award.award_type == "champion")
     playoff_appearances = len([a for a in awards if a.award_type in ["champion", "division_winner"]])
 
-    # Championships up to 8, playoff appearances up to 8, plus a flat 2-point
-    # baseline every team receives (a rank-neutral offset, so historical
-    # contributes 2-18 in practice).
-    score += min(8, championships * 5)
-    score += min(8, playoff_appearances * 2.67)
-    score += 2  # baseline offset (same for every team)
+    # Championships up to 10 (2 titles) and playoff appearances up to 10
+    # (~3 appearances). Both components are meaningful and sum to the
+    # documented 20-point max. Playoff appearances are weighted a bit higher
+    # than the old 2.67/appearance so that removing the previous rank-neutral
+    # +2 baseline doesn't demote deep-but-title-light teams; the net effect is
+    # simply that championships now count for a little more.
+    score += min(10, championships * 5)
+    score += min(10, playoff_appearances * 3.5)
 
     return score
 
@@ -595,22 +597,23 @@ def _age_to_score(avg_age: float) -> float:
         return max(0.3, 0.7 - (avg_age - 28) * 0.1)
 
 
-def _is_elite_player(player: Player) -> bool:
-    """Check if a player is considered 'elite' for dynasty purposes."""
-    if not player.age or player.age >= 28:
-        return False
-    if player.status not in ["Active", None]:
-        return False
-    return player.position in ["QB", "RB", "WR", "TE"]
+# Position-aware age ceilings for "startable" roster depth. Positions age
+# very differently in fantasy — a 31-year-old QB is still a franchise starter
+# while a 31-year-old RB usually isn't — so a single flat cutoff (previously 30
+# for everyone) wrongly zeroed out veteran QBs/WRs/TEs.
+_STARTABLE_AGE_CEILING = {"QB": 38, "TE": 33, "WR": 32, "RB": 30}
 
 
 def _is_startable(player: Player) -> bool:
-    """Check if a player is considered startable."""
-    if player.age and player.age >= 30:
-        return False
+    """Check if a player is a viable starter for roster-depth scoring."""
     if player.status not in ["Active", None]:
         return False
-    return player.position in ["QB", "RB", "WR", "TE"]
+    if player.position not in _STARTABLE_AGE_CEILING:
+        return False
+    # Unknown age is not disqualifying; only a known age past the ceiling is.
+    if player.age and player.age >= _STARTABLE_AGE_CEILING[player.position]:
+        return False
+    return True
 
 
 async def _fetch_ktc_values(player_ids: List[str], db: AsyncSession) -> Dict[str, float]:

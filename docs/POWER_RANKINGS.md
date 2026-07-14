@@ -81,7 +81,10 @@ Dynasty-focused scoring emphasizing young talent and roster construction.
 
 #### 3. Roster Depth (10 points)
 - Count of startable players × 0.5, capped at 10
-- A player is **startable** if: age < 30, Active status, position is QB/RB/WR/TE
+- A player is **startable** if Active status, position is QB/RB/WR/TE, and
+  age is below a **position-aware ceiling** (QB < 38, TE < 33, WR < 32,
+  RB < 30). Positions age very differently, so a single flat cutoff wrongly
+  zeroed out veteran QBs/WRs/TEs.
 - Formula: `min(10, startable_count * 0.5)`
 - Example: 18 startable players → min(10, 9.0) = **9.0 points**
 
@@ -124,19 +127,19 @@ Evaluates all-time success based on season awards accumulated across the full le
 
 ### Components
 
-#### 1. Championships (8 points)
+#### 1. Championships (10 points)
 - Counts all-time championship wins
-- Formula: `min(8, championships * 5)`
-- Example: 1 championship → 5.0 pts; 2 championships → 8.0 pts (capped)
+- Formula: `min(10, championships * 5)`
+- Example: 1 championship → 5.0 pts; 2 championships → 10.0 pts (capped)
 
-#### 2. Playoff Appearances (8 points)
+#### 2. Playoff Appearances (10 points)
 - Counts all-time playoff appearances (champion + division_winner awards)
-- Formula: `min(8, playoff_appearances * 2.67)`
-- Example: 1 appearance → 2.67 pts; 3 appearances → 8.0 pts (capped)
+- Formula: `min(10, playoff_appearances * 3.5)`
+- Example: 1 appearance → 3.5 pts; 3 appearances → 10.0 pts (capped)
 
-#### 3. Consistency Baseline (2 points)
-- Flat 2-point baseline awarded to all teams
-- Ensures every team with a history has a non-zero historical score
+The two components sum to the 20-point max. (A previous version capped each
+at 8 with a flat 2-point baseline; the baseline was rank-neutral dead weight,
+and championships now count for a little more.)
 
 ## Example Calculation
 
