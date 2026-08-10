@@ -1,4 +1,7 @@
 """Tests for matchup recap read endpoints."""
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +14,15 @@ from tests.conftest import (
     create_roster,
     create_matchup,
 )
+
+
+@contextmanager
+def mock_nfl_state(**state):
+    """Patch the Sleeper NFL state the recap routes read."""
+    mock = AsyncMock()
+    mock.get_nfl_state.return_value = state
+    with patch("app.api.routes.matchup_recaps.sleeper_client", mock):
+        yield mock
 
 
 @pytest.mark.anyio
@@ -97,3 +109,74 @@ async def test_bracket_label_legacy_fallback(client: AsyncClient, db_session: As
     assert resp.status_code == 200
     recap = resp.json()["recaps"][0]
     assert recap["recap_metadata"]["bracket_label"] == "🏆 Championship"
+
+
+@pytest.mark.anyio
+async def test_current_week_preseason_returns_empty(client: AsyncClient, db_session: AsyncSession):
+    """Preseason (season_type 'pre') has no real games, so report week 0 like the offseason.
+
+    Sleeper reports week 1 / 'pre' from the season start date until the regular
+    season opens. Serving those placeholder matchups made the page render nothing.
+    """
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2026)
+    u1 = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", username="bob", display_name="Bob")
+    r1 = await create_roster(db_session, season, u1, roster_id=1)
+    r2 = await create_roster(db_session, season, u2, roster_id=2)
+    # Week 1 rows exist in the DB during preseason but have never been played
+    await create_matchup(db_session, season, r1, r2, week=1)
+
+    with mock_nfl_state(season="2026", week=1, season_type="pre"):
+        resp = await client.get(f"{LEAGUE_PREFIX}/matchup-recaps/current")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week"] == 0
+    assert body["matchups"] == []
+
+
+@pytest.mark.anyio
+async def test_current_week_regular_season_returns_week_one(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Once the regular season opens, week 1 predictions must be served."""
+    league = await create_league(db_session)
+    season = await create_season(db_session, league, year=2026)
+    u1 = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", username="bob", display_name="Bob")
+    r1 = await create_roster(db_session, season, u1, roster_id=1)
+    r2 = await create_roster(db_session, season, u2, roster_id=2)
+    await create_matchup(db_session, season, r1, r2, week=1)
+
+    with mock_nfl_state(season="2026", week=1, season_type="regular"):
+        resp = await client.get(f"{LEAGUE_PREFIX}/matchup-recaps/current")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week"] == 1
+    assert len(body["matchups"]) == 1
+
+
+@pytest.mark.anyio
+async def test_previous_week_preseason_shows_last_season(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Preseason keeps showing last season's championship, same as the offseason."""
+    league = await create_league(db_session)
+    prior = await create_season(db_session, league, year=2025)
+    u1 = await create_user(db_session, id="u1", username="alice", display_name="Alice")
+    u2 = await create_user(db_session, id="u2", username="bob", display_name="Bob")
+    r1 = await create_roster(db_session, prior, u1, roster_id=1)
+    r2 = await create_roster(db_session, prior, u2, roster_id=2)
+    await create_matchup(db_session, prior, r1, r2, week=17, matchup_id=1,
+                         match_type="playoff", bracket_placement=1)
+
+    with mock_nfl_state(season="2026", week=1, season_type="pre"):
+        resp = await client.get(f"{LEAGUE_PREFIX}/matchup-recaps/previous")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["week"] == 17
+    assert body["season"] == 2025
+    assert len(body["recaps"]) == 1

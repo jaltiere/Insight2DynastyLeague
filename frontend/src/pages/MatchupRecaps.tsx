@@ -25,13 +25,9 @@ export default function MatchupRecaps() {
     queryFn: () => api.getPreviousWeekRecaps()
   });
 
-  // During offseason (week 0), show the page but with offseason message
-  const isOffseason = currentWeek && currentWeek.week === 0;
-
-  // Hide page only if it's early in the regular season (before week 2)
-  if (currentWeek && currentWeek.week === 1) {
-    return null;
-  }
+  // The API reports week 0 whenever there is no live week (offseason or preseason).
+  // Never return null here: that renders a blank page instead of an explanation.
+  const isBetweenSeasons = currentWeek && currentWeek.week === 0;
 
   // Loading state
   if (currentWeekLoading && previousWeekLoading) {
@@ -65,10 +61,10 @@ export default function MatchupRecaps() {
         <p className="text-gray-600">
           AI-generated previews and recaps powered by Claude
         </p>
-        {isOffseason && (
+        {isBetweenSeasons && (
           <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-blue-800 text-sm">
-              🏈 We're currently in the offseason. Check back when the season starts for weekly predictions and recaps!
+              🏈 The season hasn't kicked off yet. Check back once Week 1 games begin for weekly predictions and recaps!
             </p>
           </div>
         )}
@@ -105,7 +101,7 @@ export default function MatchupRecaps() {
         <section>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900">
-              {isOffseason ? `${previousWeek.season} Championship - Week ${previousWeek.week}` : `Last Week's Recaps - Week ${previousWeek.week}`}
+              {isBetweenSeasons ? `${previousWeek.season} Championship - Week ${previousWeek.week}` : `Last Week's Recaps - Week ${previousWeek.week}`}
             </h2>
             <span className="text-sm text-gray-500">
               {previousWeek.recaps.length} {previousWeek.recaps.length === 1 ? 'game' : 'games'}
@@ -140,7 +136,7 @@ export default function MatchupRecaps() {
       )}
 
       {/* Empty state */}
-      {!isOffseason && (!currentWeek?.matchups || currentWeek.matchups.length === 0) &&
+      {!isBetweenSeasons && (!currentWeek?.matchups || currentWeek.matchups.length === 0) &&
         (!previousWeek?.recaps || previousWeek.recaps.length === 0) && (
           <div className="text-center py-16">
             <p className="text-gray-500 text-lg">No matchup data available yet.</p>
