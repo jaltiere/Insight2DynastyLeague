@@ -37,8 +37,10 @@ async def get_current_week_matchups(
     current_season = int(nfl_state.get("season", 2024))
     season_type = nfl_state.get("season_type", "regular")
 
-    # Handle offseason - return empty matchups
-    if season_type == "off" or current_week == 0:
+    # Handle offseason and preseason - return empty matchups.
+    # Sleeper reports season_type "pre" with week 1 from the season start date
+    # until the regular season opens; those week 1 rows have not been played.
+    if season_type in ("off", "pre") or current_week == 0:
         return CurrentWeekMatchupsResponse(
             week=0,
             season=current_season,
@@ -89,8 +91,8 @@ async def get_previous_week_recaps(
     current_season = int(nfl_state.get("season", 2024))
     season_type = nfl_state.get("season_type", "regular")
 
-    # Handle offseason - show championship week from previous season
-    if season_type == "off" or current_week == 0:
+    # Handle offseason and preseason - show championship week from previous season
+    if season_type in ("off", "pre") or current_week == 0:
         # Get most recent completed season
         result = await db.execute(
             select(Season)
