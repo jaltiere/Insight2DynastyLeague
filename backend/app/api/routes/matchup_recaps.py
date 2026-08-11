@@ -317,11 +317,12 @@ async def regenerate_recaps(
     season_type = nfl_state.get("season_type", "regular")
     current_week = nfl_state.get("week", 0)
 
-    # Block recap regeneration during offseason unless forced
-    if not force and (season_type == "off" or current_week == 0):
+    # Block recap regeneration when no games are being played unless forced.
+    # "pre" counts: Sleeper reports preseason as week 1 with unplayed matchups.
+    if not force and (season_type in ("off", "pre") or current_week == 0):
         return {
             "status": "skipped",
-            "message": "Recap generation skipped - NFL is in offseason. Use ?force=true to override.",
+            "message": "Recap generation skipped - no NFL games are being played. Use ?force=true to override.",
             "week": week,
             "season": season
         }
@@ -377,11 +378,12 @@ async def regenerate_predictions(
     season_type = nfl_state.get("season_type", "regular")
     current_week = nfl_state.get("week", 0)
 
-    # Block prediction regeneration during offseason unless forced
-    if not force and (season_type == "off" or current_week == 0):
+    # Block prediction regeneration when no games are being played unless forced.
+    # "pre" counts: Sleeper reports preseason as week 1 with unplayed matchups.
+    if not force and (season_type in ("off", "pre") or current_week == 0):
         return {
             "status": "skipped",
-            "message": "Prediction generation skipped - NFL is in offseason. Use ?force=true to override.",
+            "message": "Prediction generation skipped - no NFL games are being played. Use ?force=true to override.",
             "week": week,
             "season": season
         }

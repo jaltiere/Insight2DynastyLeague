@@ -141,6 +141,43 @@ async def test_sync_offseason_transactions(client):
     assert 3 in weeks_called
 
 
+async def test_sync_preseason_transactions(client):
+    """Preseason (week 1, 'pre') still syncs weeks 1-3 for roster transactions.
+
+    Sleeper reports season_type "pre" with week 1 from the season start date
+    until the regular season opens. Treating that as a live week 1 would narrow
+    the sweep to a single week and miss offseason moves bucketed into weeks 2-3.
+    """
+    mock = _make_mock_sleeper_client()
+    mock.get_nfl_state.return_value = {
+        "season": "2026",
+        "week": 1,
+        "season_type": "pre",
+    }
+    mock.get_league.return_value = {
+        "league_id": "test_league_001",
+        "name": "Test League Preseason",
+        "season": "2026",
+        "status": "pre_draft",
+        "settings": {"divisions": 2, "playoff_week_start": 15, "playoff_rounds": 3},
+        "scoring_settings": {},
+        "roster_positions": [],
+    }
+    mock.get_transactions.return_value = []
+
+    with patch("app.api.routes.sync.LEAGUES", _TEST_LEAGUES), \
+         patch("app.services.sync_service.sleeper_client", mock):
+        response = await client.post("/api/sync/league", headers=_AUTH)
+
+    assert response.status_code == 200
+    assert response.json()["leagues"][0]["status"] == "success"
+
+    weeks_called = [call[0][0] for call in mock.get_transactions.call_args_list]
+    assert 1 in weeks_called
+    assert 2 in weeks_called
+    assert 3 in weeks_called
+
+
 async def test_sync_regular_season_transactions(client):
     """Test that regular season transactions sync up to current week."""
     mock = _make_mock_sleeper_client()

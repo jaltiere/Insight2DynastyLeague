@@ -101,8 +101,9 @@ class SyncService:
                     current_week = nfl_state.get("week", 1)
                     season_type = nfl_state.get("season_type", "regular")
 
-                    # During offseason, sync at least weeks 1-3 for roster transactions
-                    if current_week == 0 or season_type == "off":
+                    # Before games start, sync at least weeks 1-3 for roster transactions.
+                    # Preseason ("pre", week 1) is still roster-movement season.
+                    if current_week == 0 or season_type in ("off", "pre"):
                         weeks_to_sync = 3
                     else:
                         weeks_to_sync = current_week
@@ -126,7 +127,7 @@ class SyncService:
                     # Use same offseason logic for transactions
                     current_week = nfl_state.get("week", 1)
                     season_type = nfl_state.get("season_type", "regular")
-                    if current_week == 0 or season_type == "off":
+                    if current_week == 0 or season_type in ("off", "pre"):
                         tx_total_weeks = 3
                     else:
                         tx_total_weeks = current_week
@@ -173,10 +174,11 @@ class SyncService:
             current_week = nfl_state.get("week", 1)
             season_type = nfl_state.get("season_type", "regular")
 
-            # During offseason (week 0), we still need to sync offseason transactions
-            # which appear in early weeks (typically week 1-3)
-            if current_week == 0 or season_type == "off":
-                # Offseason: sync at least weeks 1-3 to catch roster transactions
+            # Before games start we still need to sync offseason transactions,
+            # which appear in early weeks (typically week 1-3). Preseason counts:
+            # Sleeper reports it as week 1, but no games have been played yet.
+            if current_week == 0 or season_type in ("off", "pre"):
+                # Offseason/preseason: sync at least weeks 1-3 to catch roster transactions
                 weeks_to_sync = 3
             else:
                 # Regular/post season: sync up to current week

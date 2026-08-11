@@ -16,8 +16,9 @@ jobs:
       - name: Check NFL season status
         id: nfl
         run: |
+          set -euo pipefail
           # Get current NFL state from Sleeper API
-          NFL_STATE=$(curl -s https://api.sleeper.app/v1/state/nfl)
+          NFL_STATE=$(curl -sS -f https://api.sleeper.app/v1/state/nfl)
           SEASON_TYPE=$(echo "$NFL_STATE" | jq -r '.season_type // "off"')
           WEEK=$(echo "$NFL_STATE" | jq -r '.week // 0')
           SEASON=$(echo "$NFL_STATE" | jq -r '.season // "2025"')
@@ -27,41 +28,75 @@ jobs:
           echo "season=$SEASON" >> $GITHUB_OUTPUT
           echo "NFL Season Type: $SEASON_TYPE, Week: $WEEK, Season: $SEASON"
 
-          if [ "$SEASON_TYPE" = "off" ] || [ "$WEEK" = "0" ]; then
-            echo "is_offseason=true" >> $GITHUB_OUTPUT
-            echo "⏸️ NFL is in offseason - skipping recap generation"
+          # "pre" is not a playable week: Sleeper reports preseason as week 1
+          # with matchups that have never been played.
+          if [ "$SEASON_TYPE" = "off" ] || [ "$SEASON_TYPE" = "pre" ] || [ "$WEEK" = "0" ]; then
+            echo "is_active=false" >> $GITHUB_OUTPUT
+            echo "⏸️ No NFL games in progress ($SEASON_TYPE) - skipping recap generation"
           else
-            echo "is_offseason=false" >> $GITHUB_OUTPUT
+            echo "is_active=true" >> $GITHUB_OUTPUT
             echo "🏈 NFL season is active - proceeding with recap generation"
           fi
 
+      - name: Discover leagues
+        id: leagues
+        if: steps.nfl.outputs.is_active == 'true'
+        run: |
+          set -euo pipefail
+          # Read slugs from the API so this stays in sync with leagues.json.
+          # Leagues with recaps disabled self-skip server side.
+          SLUGS=$(curl -sS -f https://api.insight2dynasty.com/api/leagues | jq -r '.[].slug' | tr '\n' ' ')
+          if [ -z "$(echo "$SLUGS" | tr -d '[:space:]')" ]; then
+            echo "::error::No league slugs returned by /api/leagues"
+            exit 1
+          fi
+          echo "slugs=$SLUGS" >> $GITHUB_OUTPUT
+          echo "Leagues: $SLUGS"
+
       - name: Generate recaps (Tuesday only)
-        if: steps.nfl.outputs.is_offseason == 'false' && github.event.schedule == '0 10 * * 2'
+        if: steps.nfl.outputs.is_active == 'true' && github.event.schedule == '0 10 * * 2'
         run: |
-          WEEK=${{ steps.nfl.outputs.week }}
-          PREV_WEEK=$((WEEK - 1))
-          echo "Generating recaps for week $PREV_WEEK..."
-
-          curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate/$PREV_WEEK" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -f || echo "Failed to generate recaps"
-
-      - name: Generate predictions (Tuesday and Thursday)
-        if: steps.nfl.outputs.is_offseason == 'false'
-        run: |
+          set -uo pipefail
           WEEK=${{ steps.nfl.outputs.week }}
           SEASON=${{ steps.nfl.outputs.season }}
-          echo "Generating predictions for week $WEEK..."
+          PREV_WEEK=$((WEEK - 1))
+          FAILED=""
+          for SLUG in ${{ steps.leagues.outputs.slugs }}; do
+            echo "Generating week $PREV_WEEK recaps for $SLUG..."
+            curl -sS -f -X POST \
+              "https://api.insight2dynasty.com/api/$SLUG/matchup-recaps/regenerate/$PREV_WEEK?season=$SEASON" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || FAILED="$FAILED $SLUG"
+            echo
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Recap generation failed for:$FAILED"
+            exit 1
+          fi
 
-          curl -X POST "https://api.insight2dynasty.com/api/matchup-recaps/regenerate-predictions/$WEEK?season=$SEASON" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -f || echo "Failed to generate predictions"
+      - name: Generate predictions (Tuesday and Thursday)
+        if: steps.nfl.outputs.is_active == 'true'
+        run: |
+          set -uo pipefail
+          WEEK=${{ steps.nfl.outputs.week }}
+          SEASON=${{ steps.nfl.outputs.season }}
+          FAILED=""
+          for SLUG in ${{ steps.leagues.outputs.slugs }}; do
+            echo "Generating week $WEEK predictions for $SLUG..."
+            curl -sS -f -X POST \
+              "https://api.insight2dynasty.com/api/$SLUG/matchup-recaps/regenerate-predictions/$WEEK?season=$SEASON" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || FAILED="$FAILED $SLUG"
+            echo
+          done
+          if [ -n "$FAILED" ]; then
+            echo "::error::Prediction generation failed for:$FAILED"
+            exit 1
+          fi
 
       - name: Report results
         if: always()
         run: |
-          if [ "${{ steps.nfl.outputs.is_offseason }}" = "true" ]; then
-            echo "⏸️ Skipped - NFL is in offseason (${{ steps.nfl.outputs.season_type }})"
+          if [ "${{ steps.nfl.outputs.is_active }}" != "true" ]; then
+            echo "⏸️ Skipped - no NFL games in progress (${{ steps.nfl.outputs.season_type }})"
           else
             echo "✅ Recap generation workflow completed"
           fi
