@@ -180,3 +180,36 @@ async def test_previous_week_preseason_shows_last_season(
     assert body["week"] == 17
     assert body["season"] == 2025
     assert len(body["recaps"]) == 1
+
+
+# Matches the CRON_SECRET env var set in conftest.py
+_AUTH = {"Authorization": "Bearer test-cron-secret"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["regenerate", "regenerate-predictions"])
+async def test_regenerate_skipped_during_preseason(client: AsyncClient, endpoint: str):
+    """Preseason must not burn Claude tokens on games that have not been scheduled."""
+    with mock_nfl_state(season="2026", week=1, season_type="pre"):
+        resp = await client.post(f"{LEAGUE_PREFIX}/matchup-recaps/{endpoint}/1", headers=_AUTH)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "skipped"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("endpoint", ["regenerate", "regenerate-predictions"])
+async def test_regenerate_force_overrides_preseason(client: AsyncClient, endpoint: str):
+    """?force=true still bypasses the guard.
+
+    With no season row present the request falls through to a 404, which proves
+    it got past the preseason check rather than short-circuiting to "skipped".
+    """
+    with mock_nfl_state(season="2026", week=1, season_type="pre"):
+        resp = await client.post(
+            f"{LEAGUE_PREFIX}/matchup-recaps/{endpoint}/1",
+            params={"season": 2026, "force": "true"},
+            headers=_AUTH,
+        )
+
+    assert resp.status_code == 404
