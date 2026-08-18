@@ -7,6 +7,8 @@ from app.models import (
     SeasonAward, MatchupPlayerPoint
 )
 from typing import Dict, Any, List
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from app.utils import utcnow, utcfromtimestamp_ms
 import logging
 
@@ -187,8 +189,10 @@ class SyncService:
             # Sync matchups for all weeks
             await self._sync_matchups_for_league(current_season, weeks_to_sync, self._league_id)
 
-            # Generate matchup recaps and predictions (week 2+, only if enabled for this league)
-            if self.recaps_enabled and current_week >= 2 and season_type in ("regular", "post"):
+            # Generate matchup recaps and predictions (only if enabled for this
+            # league). Week 1 has no previous week to recap but still needs
+            # predictions, so it is included here and guarded below.
+            if self.recaps_enabled and current_week >= 1 and season_type in ("regular", "post"):
                 from app.services.matchup_recap_service import MatchupRecapService
                 from app.config import get_settings
 
@@ -208,22 +212,28 @@ class SyncService:
 
                     # Tuesday: Generate previous week recaps + initial predictions + power ranking snapshot
                     if self._is_tuesday():
-                        logger.info(f"Tuesday sync: generating recaps for week {current_week - 1} and predictions for week {current_week}")
-                        await recap_service.generate_weekly_recaps(season_obj.id, current_week - 1)
+                        # Week 1 has no completed week behind it.
+                        if current_week >= 2:
+                            logger.info(f"Tuesday sync: generating recaps for week {current_week - 1}")
+                            await recap_service.generate_weekly_recaps(season_obj.id, current_week - 1)
+
+                            # Save power ranking snapshot for the week that just completed
+                            try:
+                                from app.api.routes.power_rankings import _save_snapshot
+                                completed_week = current_week - 1
+                                logger.info(f"Tuesday sync: saving power ranking snapshot for week {completed_week}")
+                                await _save_snapshot(self.db, current_season, completed_week, league_id=self._league_id)
+                            except Exception as snap_err:
+                                logger.warning(f"Power ranking snapshot failed (non-fatal): {snap_err}")
+
+                        logger.info(f"Tuesday sync: generating predictions for week {current_week}")
                         await recap_service.generate_current_week_predictions(season_obj.id, current_week)
 
-                        # Save power ranking snapshot for the week that just completed
-                        try:
-                            from app.api.routes.power_rankings import _save_snapshot
-                            completed_week = current_week - 1
-                            logger.info(f"Tuesday sync: saving power ranking snapshot for week {completed_week}")
-                            await _save_snapshot(self.db, current_season, completed_week, league_id=self._league_id)
-                        except Exception as snap_err:
-                            logger.warning(f"Power ranking snapshot failed (non-fatal): {snap_err}")
-
-                    # Thursday: Regenerate predictions with updated lineups
-                    elif self._is_thursday():
-                        logger.info(f"Thursday sync: regenerating predictions for week {current_week}")
+                    # Morning of the week's first game: regenerate predictions
+                    # with final lineups. Usually Thursday, but Week 1 2026
+                    # opens on a Wednesday.
+                    elif await self._is_first_game_day(int(current_season), current_week):
+                        logger.info(f"First-game-day sync: regenerating predictions for week {current_week}")
                         await recap_service.generate_current_week_predictions(
                             season_obj.id,
                             current_week,
@@ -1098,7 +1108,35 @@ class SyncService:
         """Check if today is Tuesday in UTC (matches the cron schedules)."""
         return utcnow().weekday() == 1  # Monday is 0, Tuesday is 1
 
-    def _is_thursday(self) -> bool:
-        """Check if today is Thursday in UTC (matches the cron schedules)."""
-        return utcnow().weekday() == 3  # Thursday is 3
+    async def _is_first_game_day(
+        self, season: int, week: int, today: str | None = None
+    ) -> bool:
+        """Check whether today is the day this week's first NFL game kicks off.
+
+        Predictions are refreshed on the morning of the first game so they
+        reflect final lineups. That is usually Thursday, but not always —
+        2026 Week 1 opens on a Wednesday, and a Thursday-only trigger would
+        run after kickoff. Reading the schedule keeps this correct every year.
+
+        Dates come from Sleeper as US Eastern calendar dates, so "today" is
+        evaluated in Eastern time too. Returns False if the schedule cannot be
+        read, so an outage never causes a spurious regeneration.
+        """
+        try:
+            schedule = await self.client.get_nfl_schedule(season)
+        except Exception as err:
+            logger.warning(f"NFL schedule lookup failed (non-fatal): {err}")
+            return False
+
+        week_dates = [
+            game["date"]
+            for game in schedule or []
+            if game.get("week") == week and game.get("date")
+        ]
+        if not week_dates:
+            return False
+
+        if today is None:
+            today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        return min(week_dates) == today
 

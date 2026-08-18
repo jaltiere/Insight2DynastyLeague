@@ -36,7 +36,7 @@ Insight2Dynasty is a fantasy football dynasty league website that integrates wit
 - **Backend**: api.insight2dynasty.com (FastAPI service)
 - **Database**: Railway MySQL 8.0
 - **CI/CD**: GitHub Actions for testing, Railway auto-deploy on push to main
-- **Automated Sync**: GitHub Actions daily at 6 AM UTC
+- **Automated Sync**: GitHub Actions daily at 14:00 UTC
 - **Domain Registrar**: GoDaddy
 
 **Required Dependencies (Already in requirements.txt):**
@@ -338,16 +338,17 @@ The site generates AI-powered recaps for completed matchups and predictions for 
 - **Model**: `claude-haiku-4-5-20251001`, temperature 0.9, max 250 tokens
 
 ### Scheduling & Automation
-Recaps are generated on a Tuesday/Thursday schedule during the NFL season:
+Recaps are generated during the NFL season on this schedule:
 
 | Day | Action | Trigger |
 |-----|--------|---------|
-| Tuesday | Generate previous week recaps + current week predictions | `scheduled-sync.yml` and `weekly-recaps.yml` |
-| Thursday | Regenerate predictions (updated lineups) | `scheduled-sync.yml` and `weekly-recaps.yml` |
+| Tuesday | Generate previous week recaps + current week predictions (week 1: predictions only) | `scheduled-sync.yml` and `weekly-recaps.yml` |
+| Morning of the week's first game | Regenerate predictions (final lineups) | `scheduled-sync.yml` |
+| Thursday | Regenerate predictions (final lineups) | `weekly-recaps.yml` |
 
 **Two workflows trigger generation:**
-1. `scheduled-sync.yml` - Calls `/api/cron/sync` which includes recap generation inside `sync_service.py`
-2. `weekly-recaps.yml` - Calls regenerate endpoints directly for dedicated recap generation
+1. `scheduled-sync.yml` - Runs **daily at 14:00 UTC**; calls `/api/cron/sync`, which includes recap generation inside `sync_service.py`. Because it runs every day, `sync_service._is_first_game_day()` decides which day is the lineup-refresh day by reading Sleeper's schedule (`/schedule/nfl/regular/{season}`) rather than assuming Thursday.
+2. `weekly-recaps.yml` - Tuesday/Thursday only; calls the regenerate endpoints directly as a redundant path
 
 ### Offseason Guards (Three Layers)
 Recaps are **frozen during the NFL offseason** to prevent regeneration when no games are being played. The Sleeper API's `/state/nfl` endpoint is used to detect offseason (`season_type == "off"` or `week == 0`).
@@ -371,11 +372,14 @@ curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/matchup-recaps
 
 You can also trigger the `weekly-recaps.yml` workflow manually from GitHub Actions (workflow_dispatch), but note this will be skipped during offseason unless the endpoints are called with `?force=true`.
 
-### Week 1 Wednesday Game
-The Thursday prediction sync won't run in time when Week 1 has a Wednesday night game. Manually trigger predictions the morning of the Wednesday game with a direct API call:
+### Week 1 and Non-Thursday Openers
+Week 1 does not always open on Thursday — the 2026 season opens **Wednesday, Sept 9**. This is handled automatically: the daily sync asks Sleeper for the season schedule, finds the earliest game date for the current week, and regenerates predictions on that morning. No calendar reminder or manual call is needed, and it self-corrects in future seasons.
+
+Week 1 also has no previous week to recap, so the Tuesday branch generates predictions only and skips both the recap pass and the power-ranking snapshot.
+
+If you ever need to force it by hand (e.g. the sync is down):
 
 ```bash
-# Run before the first game of Week 1 (Wednesday or whenever it kicks off)
 curl -X POST "https://api.insight2dynasty.com/api/insight2dynasty/matchup-recaps/regenerate-predictions/1?season=2026" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
@@ -476,7 +480,7 @@ Test on multiple viewport sizes:
 - Set up domain forwarding: `insight2dynasty.com` → `www.insight2dynasty.com`
 
 **Automated Data Sync**:
-- GitHub Actions workflow runs daily at 6 AM UTC
+- GitHub Actions workflow runs daily at 14:00 UTC
 - Calls `/api/cron/sync` endpoint with Bearer token authentication
 - Updates current season data automatically
 
@@ -484,8 +488,8 @@ Test on multiple viewport sizes:
 - `railway.toml` - Railway deployment configuration
 - `nixpacks.toml` - Nixpacks build configuration (sets working directory to backend)
 - `.github/workflows/deploy.yml` - CI tests
-- `.github/workflows/scheduled-sync.yml` - Tuesday/Thursday automated sync (includes recap generation)
-- `.github/workflows/weekly-recaps.yml` - Dedicated recap generation workflow (Tuesday/Thursday)
+- `.github/workflows/scheduled-sync.yml` - Daily automated sync at 14:00 UTC (includes recap generation)
+- `.github/workflows/weekly-recaps.yml` - Dedicated recap generation workflow (Tuesday/Thursday), redundant with the daily sync
 
 **Important Notes**:
 - Database migrations run as part of the start command (no separate migration step needed)

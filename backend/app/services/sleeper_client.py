@@ -106,6 +106,22 @@ class SleeperClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_nfl_schedule(
+        self, season: int | str, season_type: str = "regular"
+    ) -> List[Dict[str, Any]]:
+        """Get the NFL game schedule for a season.
+
+        Entries look like {"week": 1, "date": "2026-09-09", "home": ..., ...}
+        where `date` is the US Eastern calendar date of the game. This route
+        lives outside the /v1 namespace.
+        """
+        host = self.base_url.rsplit("/v1", 1)[0]
+        response = await self.client.get(
+            f"{host}/schedule/nfl/{season_type}/{season}"
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_nfl_state(self) -> Dict[str, Any]:
         """Get current NFL season state (cached for NFL_STATE_TTL_SECONDS)."""
         now = time.monotonic()
