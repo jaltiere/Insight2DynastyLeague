@@ -369,3 +369,155 @@ async def test_sync_stores_bracket_placement(client, db_session):
     # Regular-season weeks carry no placement
     result = await db_session.execute(select(Matchup).where(Matchup.week == 1))
     assert result.scalars().one().bracket_placement is None
+
+
+# ---------------------------------------------------------------------------
+# Prediction refresh fires on the week's first game day, not just Thursday
+# ---------------------------------------------------------------------------
+
+# Real 2026 Week 1 shape: a Wednesday opener, a Thursday game, then Sunday.
+_WEEK1_WEDNESDAY_OPENER = [
+    {"week": 1, "date": "2026-09-09", "home": "SEA", "away": "NE"},
+    {"week": 1, "date": "2026-09-10", "home": "LAR", "away": "SF"},
+    {"week": 1, "date": "2026-09-13", "home": "CIN", "away": "TB"},
+    {"week": 2, "date": "2026-09-17", "home": "GB", "away": "DET"},
+]
+
+
+def _sync_service_with_schedule(db_session, schedule):
+    from app.services.sync_service import SyncService
+
+    svc = SyncService(db_session, league_id="test_league_001")
+    mock = AsyncMock()
+    mock.get_nfl_schedule.return_value = schedule
+    svc.client = mock
+    return svc
+
+
+async def test_first_game_day_true_on_wednesday_opener(db_session):
+    """Week 1 2026 opens on a Wednesday, so Wednesday is the day predictions
+    must be refreshed — Thursday would be after kickoff."""
+    svc = _sync_service_with_schedule(db_session, _WEEK1_WEDNESDAY_OPENER)
+    assert await svc._is_first_game_day(2026, 1, today="2026-09-09") is True
+
+
+async def test_first_game_day_false_on_thursday_of_wednesday_week(db_session):
+    """The Thursday game is not the week's first game, so no second refresh."""
+    svc = _sync_service_with_schedule(db_session, _WEEK1_WEDNESDAY_OPENER)
+    assert await svc._is_first_game_day(2026, 1, today="2026-09-10") is False
+
+
+async def test_first_game_day_true_on_normal_thursday_week(db_session):
+    """A normal week still refreshes on Thursday — same behaviour as before."""
+    svc = _sync_service_with_schedule(db_session, _WEEK1_WEDNESDAY_OPENER)
+    assert await svc._is_first_game_day(2026, 2, today="2026-09-17") is True
+
+
+async def test_first_game_day_false_when_schedule_unavailable(db_session):
+    """A Sleeper outage must not trigger a spurious prediction refresh."""
+    from app.services.sync_service import SyncService
+
+    svc = SyncService(db_session, league_id="test_league_001")
+    mock = AsyncMock()
+    mock.get_nfl_schedule.side_effect = RuntimeError("sleeper down")
+    svc.client = mock
+    assert await svc._is_first_game_day(2026, 1, today="2026-09-09") is False
+
+
+async def test_first_game_day_false_for_week_with_no_games(db_session):
+    svc = _sync_service_with_schedule(db_session, _WEEK1_WEDNESDAY_OPENER)
+    assert await svc._is_first_game_day(2026, 18, today="2026-09-09") is False
+
+
+# ---------------------------------------------------------------------------
+# Week 1 predictions
+# ---------------------------------------------------------------------------
+
+_RECAP_LEAGUES = [{"id": "test_league_001", "slug": "test", "recaps_enabled": True}]
+
+
+async def _run_sync_with_recaps(client, nfl_state, patches=None):
+    """Run a league sync with recaps enabled and a stubbed recap service.
+
+    Returns the stubbed MatchupRecapService instance so callers can assert
+    which generation calls were made.
+    """
+    mock = _make_mock_sleeper_client()
+    mock.get_nfl_state.return_value = nfl_state
+    mock.get_nfl_schedule.return_value = _WEEK1_WEDNESDAY_OPENER
+
+    recap_instance = AsyncMock()
+    recap_instance.generate_weekly_recaps.return_value = 0
+    recap_instance.generate_current_week_predictions.return_value = 0
+
+    stack = [
+        patch("app.api.routes.sync.LEAGUES", _RECAP_LEAGUES),
+        patch("app.services.sync_service.sleeper_client", mock),
+        patch(
+            "app.services.matchup_recap_service.MatchupRecapService",
+            return_value=recap_instance,
+        ),
+    ] + list(patches or [])
+
+    from contextlib import ExitStack
+    with ExitStack() as es:
+        for p in stack:
+            es.enter_context(p)
+        response = await client.post("/api/sync/league", headers=_AUTH)
+
+    assert response.status_code == 200
+    return recap_instance
+
+
+async def test_week_one_tuesday_generates_predictions_without_recaps(client):
+    """Week 1 has no previous week to recap, but predictions must still be
+    generated — the old `week >= 2` gate skipped them entirely."""
+    recap = await _run_sync_with_recaps(
+        client,
+        {"season": "2026", "week": 1, "season_type": "regular"},
+        patches=[patch(
+            "app.services.sync_service.SyncService._is_tuesday",
+            return_value=True,
+        )],
+    )
+
+    recap.generate_current_week_predictions.assert_awaited()
+    assert recap.generate_current_week_predictions.await_args.args[1] == 1
+    recap.generate_weekly_recaps.assert_not_awaited()
+
+
+async def test_week_one_wednesday_opener_refreshes_predictions(client):
+    """On the morning of a Wednesday opener the predictions are regenerated
+    with final lineups, rather than waiting for the Thursday run."""
+    recap = await _run_sync_with_recaps(
+        client,
+        {"season": "2026", "week": 1, "season_type": "regular"},
+        patches=[
+            patch(
+                "app.services.sync_service.SyncService._is_tuesday",
+                return_value=False,
+            ),
+            patch(
+                "app.services.sync_service.SyncService._is_first_game_day",
+                new=AsyncMock(return_value=True),
+            ),
+        ],
+    )
+
+    recap.generate_current_week_predictions.assert_awaited()
+    assert recap.generate_current_week_predictions.await_args.kwargs["regenerate"] is True
+
+
+async def test_preseason_generates_nothing(client):
+    """The offseason/preseason guard still holds."""
+    recap = await _run_sync_with_recaps(
+        client,
+        {"season": "2026", "week": 1, "season_type": "pre"},
+        patches=[patch(
+            "app.services.sync_service.SyncService._is_tuesday",
+            return_value=True,
+        )],
+    )
+
+    recap.generate_current_week_predictions.assert_not_awaited()
+    recap.generate_weekly_recaps.assert_not_awaited()
