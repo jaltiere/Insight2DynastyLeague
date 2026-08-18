@@ -15,7 +15,7 @@ from sqlalchemy import select, desc, or_, func
 
 from app.database import get_db
 from app.api.deps import get_league_id, verify_cron_secret
-from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup, League
+from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup, League, Draft
 from app.models.player_value import PlayerValue
 from app.config import get_settings
 from app.services.ktc_service import refresh_ktc_values
@@ -47,6 +47,25 @@ async def _get_league_scoring_format(db: AsyncSession, league_id: str) -> str:
     league = result.scalar_one_or_none()
     positions = league.roster_positions if league else []
     return "superflex" if "SUPER_FLEX" in (positions or []) else "1qb"
+
+
+async def _get_min_tradeable_pick_year(
+    db: AsyncSession, league_id: str, season: Season
+) -> int:
+    """Return the earliest draft-pick year that is still a live asset.
+
+    Sleeper keeps listing a season's traded picks — and KTC keeps a cached
+    value row for them — long after that season's rookie draft has been held,
+    but those picks have already been used. The first still-live year is the
+    one after the most recently completed draft.
+    """
+    result = await db.execute(
+        select(func.max(Draft.year))
+        .join(Season, Draft.season_id == Season.id)
+        .where(Season.group_id == league_id, Draft.status == "complete")
+    )
+    last_completed_year = result.scalar()
+    return (last_completed_year + 1) if last_completed_year else season.year
 
 
 async def _build_value_map(db: AsyncSession, superflex: bool = False) -> dict[str, int]:
@@ -338,6 +357,13 @@ async def get_pick_values(
     scoring_format = await _get_league_scoring_format(db, league_id)
     superflex = scoring_format == "superflex"
 
+    # Picks whose draft has already been held are no longer tradeable, but
+    # their KTC rows stay cached. Without a season we cannot tell, so show all.
+    season = await _get_current_season(db, league_id)
+    min_pick_year = (
+        await _get_min_tradeable_pick_year(db, league_id, season) if season else None
+    )
+
     result = await db.execute(
         select(PlayerValue)
         .where(PlayerValue.position == "RDP")
@@ -354,6 +380,8 @@ async def get_pick_values(
         if len(parts) != 3:
             continue
         year, round_num, tier = parts
+        if min_pick_year is not None and int(year) < min_pick_year:
+            continue
         value = (pick.superflex_value or pick.value) if superflex else pick.value
         rank = (pick.superflex_rank or pick.rank) if superflex else pick.rank
         out.append({
@@ -454,8 +482,14 @@ async def get_roster_picks(
     except Exception:
         traded_raw = []
 
-    # Determine which future seasons are referenced, default to next year
-    future_seasons = sorted({int(p["season"]) for p in traded_raw}) or [season.year + 1]
+    # Picks for a season whose rookie draft has already been held are spent,
+    # but Sleeper keeps returning them — drop them from every path below.
+    min_pick_year = await _get_min_tradeable_pick_year(db, league_id, season)
+
+    # Determine which live seasons are referenced, default to the earliest one
+    future_seasons = sorted(
+        {y for y in (int(p["season"]) for p in traded_raw) if y >= min_pick_year}
+    ) or [min_pick_year]
 
     # ── 4. Build traded-away and traded-in sets ────────────────────────────
     # traded_away: (season, round, original_roster_id) where user is previous_owner
@@ -473,7 +507,11 @@ async def get_roster_picks(
         if p_prev == user_roster_id and p_owner != user_roster_id:
             traded_away.add((p_season, p_round, p_roster))
 
-        if p_owner == user_roster_id and p_roster != user_roster_id:
+        if (
+            p_owner == user_roster_id
+            and p_roster != user_roster_id
+            and p_season >= min_pick_year
+        ):
             traded_in.append(pick)
 
     # ── 5. Determine number of rounds from upcoming draft ──────────────────

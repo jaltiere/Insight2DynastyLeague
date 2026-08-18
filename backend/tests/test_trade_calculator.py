@@ -17,6 +17,7 @@ from tests.conftest import (
     create_season,
     create_roster,
     create_player,
+    create_draft,
     create_matchup,
     create_matchup_player_point,
     create_transaction,
@@ -269,3 +270,115 @@ async def test_roster_picks_preseason_uses_prior_standings(client, db_session, m
     own2 = [p for p in resp2.json()["picks"] if p["own_pick"]]
     assert all(p["original_record"] == "12-2" for p in own2)
     assert all(p["estimated_pick_slot"] == 2 for p in own2)
+
+
+# ---------------------------------------------------------------------------
+# Picks from an already-completed rookie draft are not tradeable
+# ---------------------------------------------------------------------------
+
+async def _seed_two_team_2026(db_session, draft_status: str | None):
+    """Current season 2026 with two rosters and an optional 2026 draft row."""
+    league = await create_league(db_session)
+    current = await create_season(db_session, league, year=2026)
+    u1 = await create_user(db_session, id="u1", username="o1", display_name="O1")
+    u2 = await create_user(db_session, id="u2", username="o2", display_name="O2")
+    await create_roster(db_session, current, u1, roster_id=1, wins=4, losses=10)
+    await create_roster(db_session, current, u2, roster_id=2, wins=10, losses=4)
+    if draft_status is not None:
+        await create_draft(db_session, current, id="d2026", status=draft_status)
+    await db_session.commit()
+
+
+def _patch_sleeper(monkeypatch, traded_picks):
+    from app.services.sleeper_client import sleeper_client
+
+    async def _traded(league_id=None):
+        return traded_picks
+
+    async def _drafts(league_id=None):
+        return [{"season": "2026", "status": "complete", "settings": {"rounds": 4}}]
+
+    monkeypatch.setattr(sleeper_client, "get_traded_picks", _traded)
+    monkeypatch.setattr(sleeper_client, "get_drafts", _drafts)
+
+
+async def test_roster_picks_excludes_years_whose_draft_is_complete(
+    client, db_session, monkeypatch
+):
+    """Sleeper keeps returning traded picks for a season after that season's
+    rookie draft has been held. Those picks have already been used and must
+    not be offered by the trade calculator."""
+    await _seed_two_team_2026(db_session, draft_status="complete")
+
+    _patch_sleeper(monkeypatch, traded_picks=[
+        # A 2026 pick that was already used in the completed draft
+        {"season": "2026", "round": 1, "roster_id": 2,
+         "owner_id": 1, "previous_owner_id": 2},
+        # A genuine future pick
+        {"season": "2027", "round": 1, "roster_id": 2,
+         "owner_id": 1, "previous_owner_id": 2},
+    ])
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster-picks/u1")
+    assert resp.status_code == 200
+    years = {p["year"] for p in resp.json()["picks"]}
+    assert 2026 not in years, "2026 draft is complete; its picks no longer exist"
+    assert 2027 in years
+
+
+async def test_roster_picks_includes_current_year_before_its_draft(
+    client, db_session, monkeypatch
+):
+    """Before the rookie draft is held, the current season's picks are still
+    real assets and must remain tradeable."""
+    await _seed_two_team_2026(db_session, draft_status="pre_draft")
+
+    _patch_sleeper(monkeypatch, traded_picks=[
+        {"season": "2026", "round": 1, "roster_id": 2,
+         "owner_id": 1, "previous_owner_id": 2},
+    ])
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/roster-picks/u1")
+    assert resp.status_code == 200
+    years = {p["year"] for p in resp.json()["picks"]}
+    assert 2026 in years, "2026 draft has not been held; its picks are still assets"
+
+
+async def test_pick_values_excludes_years_whose_draft_is_complete(
+    client, db_session
+):
+    """The pick list shown before an owner is selected comes from cached KTC
+    rows, which linger after a draft. It must hide dead years too, or the two
+    halves of the trade calculator disagree."""
+    await _seed_two_team_2026(db_session, draft_status="complete")
+    db_session.add(PlayerValue(
+        pick_key="2026_1_early", ktc_name="2026 Early 1st",
+        value=6165, source="ktc", position="RDP",
+    ))
+    db_session.add(PlayerValue(
+        pick_key="2027_1_early", ktc_name="2027 Early 1st",
+        value=7275, source="ktc", position="RDP",
+    ))
+    await db_session.commit()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/pick-values")
+    assert resp.status_code == 200
+    years = {p["year"] for p in resp.json()["picks"]}
+    assert years == {2027}
+
+
+async def test_pick_values_keeps_current_year_before_its_draft(
+    client, db_session
+):
+    """Mirror of the above: pre-draft, the current year's pick values stay."""
+    await _seed_two_team_2026(db_session, draft_status="pre_draft")
+    db_session.add(PlayerValue(
+        pick_key="2026_1_early", ktc_name="2026 Early 1st",
+        value=6165, source="ktc", position="RDP",
+    ))
+    await db_session.commit()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/pick-values")
+    assert resp.status_code == 200
+    years = {p["year"] for p in resp.json()["picks"]}
+    assert years == {2026}
