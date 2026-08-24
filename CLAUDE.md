@@ -144,7 +144,7 @@ Routes are split into **global** (no league scope) and **league-scoped** (under 
 - **Owners**: `GET /owners`, `GET /owners/{owner_id}`
 - **Matchups**: `GET /matchups/head-to-head/{owner1}/{owner2}`
 - **Drafts**: `GET /drafts`, `GET /drafts/{year}`
-- **Draft Picks**: `GET /draft-picks`
+- **Draft Picks**: `GET /draft-picks/future`
 - **Draft Grades**: `GET /draft-grades`, `GET /draft-grades/{draft_id}`
 - **League History**: `GET /league-history`, `GET /league-history/{season}`
 - **Player Records**: `GET /player-records`
@@ -152,7 +152,7 @@ Routes are split into **global** (no league scope) and **league-scoped** (under 
 - **Team Records**: `GET /team-records`
 - **Taxi Squads**: `GET /taxi-squads`
 - **Free Agents**: `GET /free-agents`
-- **Transactions**: `GET /transactions`
+- **Transactions**: `GET /transactions/recent`, `GET /transactions/summary`, `GET /transactions/by-owner`
 - **Trade Grades**: `GET /trade-grades`, `GET /trade-grades/{trade_id}`
 - **Trade Calculator**: `GET /trade-calculator/owners`, `GET /trade-calculator/roster/{user_id}`, `GET /trade-calculator/search`, `GET /trade-calculator/pick-values`, `GET /trade-calculator/roster-picks/{user_id}`, `GET /trade-calculator/h2h-trades/{user_id_a}/{user_id_b}`, `POST /trade-calculator/refresh` (CRON_SECRET)
 - **Playoffs**: `GET /playoffs`
@@ -343,12 +343,11 @@ Recaps are generated during the NFL season on this schedule:
 | Day | Action | Trigger |
 |-----|--------|---------|
 | Tuesday | Generate previous week recaps + current week predictions (week 1: predictions only) | `scheduled-sync.yml` and `weekly-recaps.yml` |
-| Morning of the week's first game | Regenerate predictions (final lineups) | `scheduled-sync.yml` |
-| Thursday | Regenerate predictions (final lineups) | `weekly-recaps.yml` |
+| Morning of the week's first game | Regenerate predictions (final lineups) | `scheduled-sync.yml` and `weekly-recaps.yml` |
 
 **Two workflows trigger generation:**
 1. `scheduled-sync.yml` - Runs **daily at 14:00 UTC**; calls `/api/cron/sync`, which includes recap generation inside `sync_service.py`. Because it runs every day, `sync_service._is_first_game_day()` decides which day is the lineup-refresh day by reading Sleeper's schedule (`/schedule/nfl/regular/{season}`) rather than assuming Thursday.
-2. `weekly-recaps.yml` - Tuesday/Thursday only; calls the regenerate endpoints directly as a redundant path
+2. `weekly-recaps.yml` - Tuesday/Thursday only; calls the regenerate endpoints directly as a redundant path. The Thursday run reads Sleeper's schedule and only regenerates predictions when Thursday is actually the week's first game day, so a Wednesday opener (2026 Week 1) does not get its predictions rewritten after kickoff. The Tuesday run skips the recap pass in week 1, which has no previous week.
 
 ### Offseason Guards (Three Layers)
 Recaps are **frozen during the NFL offseason** to prevent regeneration when no games are being played. The Sleeper API's `/state/nfl` endpoint is used to detect offseason (`season_type == "off"` or `week == 0`).
@@ -489,7 +488,7 @@ Test on multiple viewport sizes:
 - `nixpacks.toml` - Nixpacks build configuration (sets working directory to backend)
 - `.github/workflows/deploy.yml` - CI tests
 - `.github/workflows/scheduled-sync.yml` - Daily automated sync at 14:00 UTC (includes recap generation)
-- `.github/workflows/weekly-recaps.yml` - Dedicated recap generation workflow (Tuesday/Thursday), redundant with the daily sync
+- `.github/workflows/weekly-recaps.yml` - Dedicated recap generation workflow (Tuesday, plus Thursday when it is the week's first game day), redundant with the daily sync
 
 **Important Notes**:
 - Database migrations run as part of the start command (no separate migration step needed)

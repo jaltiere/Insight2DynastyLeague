@@ -4,7 +4,9 @@ on:
   schedule:
     # Tuesday at 10 AM UTC (after games are final)
     - cron: '0 10 * * 2'
-    # Thursday at 14 AM UTC (lineup updates)
+    # Thursday at 14:00 UTC (lineup updates). Thursday is only the usual first
+    # game day, not a guaranteed one - 2026 Week 1 opens on a Wednesday - so
+    # this run is gated on the schedule below, matching SyncService.
     - cron: '0 14 * * 4'
   workflow_dispatch:  # Allow manual trigger
 
@@ -32,10 +34,32 @@ jobs:
           # with matchups that have never been played.
           if [ "$SEASON_TYPE" = "off" ] || [ "$SEASON_TYPE" = "pre" ] || [ "$WEEK" = "0" ]; then
             echo "is_active=false" >> $GITHUB_OUTPUT
+            echo "is_first_game_day=false" >> $GITHUB_OUTPUT
             echo "⏸️ No NFL games in progress ($SEASON_TYPE) - skipping recap generation"
+            exit 0
+          fi
+
+          echo "is_active=true" >> $GITHUB_OUTPUT
+          echo "🏈 NFL season is active - proceeding with recap generation"
+
+          # Is today the morning of this week's first game? Predictions are
+          # refreshed then so they reflect final lineups. Sleeper's schedule
+          # route lives outside /v1 and its dates are US Eastern calendar
+          # dates, so "today" is evaluated in Eastern time too. A lookup
+          # failure yields false, so an outage never causes a stale-data
+          # regeneration - the same fallback SyncService uses.
+          TODAY=$(TZ=America/New_York date +%F)
+          FIRST_GAME=$(curl -sS -f "https://api.sleeper.app/schedule/nfl/regular/$SEASON" \
+            | jq -r --argjson wk "$WEEK" \
+              '[.[] | select(.week == $wk and .date != null) | .date] | min // ""' \
+            || echo "")
+
+          if [ -n "$FIRST_GAME" ] && [ "$FIRST_GAME" = "$TODAY" ]; then
+            echo "is_first_game_day=true" >> $GITHUB_OUTPUT
+            echo "🏟️ Today ($TODAY) is week $WEEK's first game day"
           else
-            echo "is_active=true" >> $GITHUB_OUTPUT
-            echo "🏈 NFL season is active - proceeding with recap generation"
+            echo "is_first_game_day=false" >> $GITHUB_OUTPUT
+            echo "📅 Today is $TODAY; week $WEEK opens ${FIRST_GAME:-unknown}"
           fi
 
       - name: Discover leagues
@@ -59,6 +83,15 @@ jobs:
           set -uo pipefail
           WEEK=${{ steps.nfl.outputs.week }}
           SEASON=${{ steps.nfl.outputs.season }}
+
+          # Week 1 has no completed week behind it. Without this the step calls
+          # regenerate/0, which succeeds with zero recaps and buries the real
+          # week-1 result in the log.
+          if [ "$WEEK" -lt 2 ]; then
+            echo "⏭️ Week $WEEK has no previous week to recap - skipping"
+            exit 0
+          fi
+
           PREV_WEEK=$((WEEK - 1))
           FAILED=""
           for SLUG in ${{ steps.leagues.outputs.slugs }}; do
@@ -73,8 +106,15 @@ jobs:
             exit 1
           fi
 
-      - name: Generate predictions (Tuesday and Thursday)
-        if: steps.nfl.outputs.is_active == 'true'
+      # Tuesday seeds the week's predictions; the first-game-day run refreshes
+      # them against final lineups. The Thursday cron is skipped when Thursday
+      # is not the opener, so predictions are never rewritten after kickoff.
+      - name: Generate predictions (Tuesday and first game day)
+        if: >-
+          steps.nfl.outputs.is_active == 'true' &&
+          (github.event.schedule == '0 10 * * 2' ||
+           github.event_name == 'workflow_dispatch' ||
+           steps.nfl.outputs.is_first_game_day == 'true')
         run: |
           set -uo pipefail
           WEEK=${{ steps.nfl.outputs.week }}
@@ -97,9 +137,14 @@ jobs:
         run: |
           if [ "${{ steps.nfl.outputs.is_active }}" != "true" ]; then
             echo "⏸️ Skipped - no NFL games in progress (${{ steps.nfl.outputs.season_type }})"
+          elif [ "${{ github.event.schedule }}" = "0 14 * * 4" ] \
+            && [ "${{ steps.nfl.outputs.is_first_game_day }}" != "true" ]; then
+            echo "⏸️ Skipped - this week opened before today, so predictions"
+            echo "   would be rewritten after kickoff"
           else
             echo "✅ Recap generation workflow completed"
           fi
-          echo "Day: $(date +%A)"
+          echo "Day: $(TZ=America/New_York date +'%A %F') (US Eastern)"
           echo "Season Type: ${{ steps.nfl.outputs.season_type }}"
           echo "Week: ${{ steps.nfl.outputs.week }}"
+          echo "First game day: ${{ steps.nfl.outputs.is_first_game_day }}"
