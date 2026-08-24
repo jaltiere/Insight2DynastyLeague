@@ -13,8 +13,8 @@ Both sides of a trade must be league owners. You browse each owner's actual rost
 | **League PPG delta** | How far above/below the position average a player scores in *this* league's scoring settings |
 | **Roster fit badges** | Whether a player or pick fits the receiving team's competitive window |
 | **H2H trade history** | All past trades between the two selected owners, graded and expandable |
-| **Fair zone** | A ±6% buffer around 50/50 — trades within the zone are considered fair |
-| **Fairness suggestion** | Assets from the losing side's actual roster that would bring the trade closest to even |
+| **Fair zone** | The better half may be worth at most 10% more than the other half |
+| **Fairness suggestion** | Assets from the winning side's actual roster that would bring the trade closest to even |
 
 ---
 
@@ -81,20 +81,40 @@ Team classifications (Win Now, Future Contender, Rebuilding, Retooling) are deri
 
 ## Fair Zone
 
-The value bar shows each side's share of total trade value. A **green bracket** below the bar marks the fair zone: any split between 44% and 56% is considered fair.
+The value bar shows each side's share of the value they **receive**. A **green bracket** below the bar marks the fair zone.
 
-- Trades inside the zone display: **✓ Fair trade**
+A trade is fair when the better half is worth **no more than 10% more** than the other half:
+
+```
+max(sideA, sideB) / min(sideA, sideB) <= 1.10
+```
+
+In share-of-total terms that bracket spans roughly **47.6% to 52.4%**.
+
+- Trades inside the zone display **✓ Fair trade**, plus who still comes out ahead and by how much
 - Trades outside the zone display the winning side, the value gap, and a suggestion panel
 
-The ±6% threshold was chosen to account for normal valuation uncertainty and negotiation variance.
+The verdict **always names a winner when the sides are not exactly equal**, whether or not the trade is fair. "Fair" means the gap is small enough to negotiate around — not that the sides are even.
+
+### Why a ratio and not a share band
+
+The original rule was a ±6 percentage-point band around a 50/50 share of total value. That sounded tighter than it was: a 44/56 split is a ratio of 1.273, so the old rule called a trade fair when one side was worth **27% more** than the other. It also scaled with trade size — the same ±6% allowed a 660-point gap on a 5,500-point trade and a 2,400-point gap on a 20,000-point trade.
+
+The ratio threshold applies the same standard at every trade size.
+
+The math lives in `frontend/src/utils/tradeValue.ts` (`evaluateTrade`), unit tested in `tradeValue.test.ts`.
+
+### Winner orientation
+
+Each owner's column lists the assets that owner is **sending**. Side A therefore *receives* side B's total, so the winner is the side that **receives** more than it gives up. (Through v1 this was inverted — the calculator named the overpaying side as the winner.)
 
 ---
 
 ## Fairness Suggestions
 
-When a trade is outside the fair zone, the calculator identifies which assets from the **losing side's own roster** (players and picks they actually own) would bring the trade closest to even. Up to 4 suggestions are shown, sorted by how close each asset's value is to closing the gap.
+When a trade is outside the fair zone, the calculator identifies which assets from the **winning side's own roster** (players and picks they actually own) would bring the trade closest to even — the side coming out ahead is the side that needs to add value. Up to 4 suggestions are shown, sorted by how close each asset's value is to closing the gap.
 
-If no single asset on the losing side's roster is close enough, the panel displays:
+If no single asset on the winning side's roster is close enough, the panel displays:
 > "No single asset on [owner]'s roster closes this gap — a package deal or restructured trade may be needed."
 
 ---

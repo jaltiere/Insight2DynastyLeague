@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
+import { evaluateTrade, FAIR_SHARE_LOW, FAIR_SHARE_HIGH } from '../utils/tradeValue';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -497,14 +498,15 @@ function TradeSidePanel({
 
 function FairnessSuggestion({
   gap,
-  losingRoster,
-  losingOwnerLabel,
+  sweetenRoster,
+  sweetenOwnerLabel,
   picks,
   assetIds,
 }: {
   gap: number;
-  losingRoster: TradePlayer[];
-  losingOwnerLabel: string;
+  /** Roster of the side that is coming out ahead — they add value to even it up. */
+  sweetenRoster: TradePlayer[];
+  sweetenOwnerLabel: string;
   picks: PickValue[];
   assetIds: Set<string>;
 }) {
@@ -513,7 +515,7 @@ function FairnessSuggestion({
     const results: Array<{ label: string; value: number; position: string | null; residual: number }> = [];
 
     // Suggest players not already in the trade
-    for (const p of losingRoster) {
+    for (const p of sweetenRoster) {
       if (assetIds.has(p.player_id) || p.ktc_value === 0) continue;
       results.push({
         label: p.full_name,
@@ -535,16 +537,16 @@ function FairnessSuggestion({
     }
 
     return results.sort((a, b) => a.residual - b.residual).slice(0, 4);
-  }, [gap, losingRoster, picks, assetIds]);
+  }, [gap, sweetenRoster, picks, assetIds]);
 
   return (
     <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
       <div className="text-sm font-bold text-amber-800 dark:text-amber-300 mb-2">
-        For <span className="italic">{losingOwnerLabel}</span> to sweeten this deal, they could add:
+        For <span className="italic">{sweetenOwnerLabel}</span> to even this up, they could add:
       </div>
       {suggestions.length === 0 ? (
         <p className="text-sm text-amber-700 dark:text-amber-400 italic">
-          No single asset on {losingOwnerLabel}'s roster closes this gap — a package deal or restructured trade may be needed.
+          No single asset on {sweetenOwnerLabel}'s roster closes this gap — a package deal or restructured trade may be needed.
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -820,28 +822,21 @@ export default function TradeCalculator() {
 
   const totalA = sideAAssets.reduce((s, a) => s + a.value, 0);
   const totalB = sideBAssets.reduce((s, a) => s + a.value, 0);
-  const grandTotal = totalA + totalB;
+
+  // Each column lists what that owner is *sending*, so A receives totalB and
+  // B receives totalA. The winner is whoever comes out ahead on that exchange.
+  const { grandTotal, receivedA, receivedB, shareA, shareB, gap, gapPct, isFair, winner } =
+    evaluateTrade(totalA, totalB);
   const hasAssets = grandTotal > 0;
 
-  const shareA = grandTotal > 0 ? totalA / grandTotal : 0.5;
-  const shareB = grandTotal > 0 ? totalB / grandTotal : 0.5;
+  // The winning side is the one that has to sweeten the deal.
+  const sweetenRoster: TradePlayer[] =
+    winner === 'A' ? (rosterA?.players ?? []) :
+    winner === 'B' ? (rosterB?.players ?? []) : [];
 
-  const FAIR_ZONE = 0.06; // ±6% from 50% is considered fair
-  const isFair = Math.abs(shareA - 0.5) <= FAIR_ZONE;
-  const winner = isFair ? 'even' : totalA > totalB ? 'A' : 'B';
-  const gap = Math.abs(totalA - totalB);
-  const gapPct = grandTotal > 0 ? Math.round((gap / grandTotal) * 100) : 0;
-
-  // Losing side's roster (for suggestions)
-  const losingRoster: TradePlayer[] =
-    winner === 'A' ? (rosterB?.players ?? []) :
-    winner === 'B' ? (rosterA?.players ?? []) : [];
-
-  const losingAssetIds = useMemo(() => {
-    const ids = new Set<string>();
-    (winner === 'A' ? sideBAssets : sideAAssets).forEach((a) => ids.add(a.id));
-    return ids;
-  }, [winner, sideAAssets, sideBAssets]);
+  const sweetenAssetIds = new Set(
+    (winner === 'A' ? sideAAssets : sideBAssets).map((a) => a.id)
+  );
 
   // Owner labels for the verdict
   const ownerALabel = owners.find((o) => o.user_id === sideAOwnerId)?.display_name ?? 'Side A';
@@ -957,17 +952,22 @@ export default function TradeCalculator() {
               {/* Horizontal bracket line */}
               <div
                 className="absolute bg-green-500 dark:bg-green-400"
-                style={{ left: '44%', width: '12%', top: '6px', height: '2px' }}
+                style={{
+                  left: `${FAIR_SHARE_LOW * 100}%`,
+                  width: `${(FAIR_SHARE_HIGH - FAIR_SHARE_LOW) * 100}%`,
+                  top: '6px',
+                  height: '2px',
+                }}
               />
               {/* Left tick */}
               <div
                 className="absolute bg-green-500 dark:bg-green-400"
-                style={{ left: '44%', top: '0px', width: '2px', height: '8px' }}
+                style={{ left: `${FAIR_SHARE_LOW * 100}%`, top: '0px', width: '2px', height: '8px' }}
               />
               {/* Right tick */}
               <div
                 className="absolute bg-green-500 dark:bg-green-400"
-                style={{ left: 'calc(56% - 2px)', top: '0px', width: '2px', height: '8px' }}
+                style={{ left: `calc(${FAIR_SHARE_HIGH * 100}% - 2px)`, top: '0px', width: '2px', height: '8px' }}
               />
               {/* Label */}
               <span
@@ -979,37 +979,60 @@ export default function TradeCalculator() {
             </div>
 
             <div className="flex justify-between text-sm font-bold mt-1">
-              <span className="text-blue-600 dark:text-blue-400">{formatValue(totalA)}</span>
-              <span className="text-rose-600 dark:text-rose-400">{formatValue(totalB)}</span>
+              <span className="text-blue-600 dark:text-blue-400">{formatValue(receivedA)}</span>
+              <span className="text-rose-600 dark:text-rose-400">{formatValue(receivedB)}</span>
+            </div>
+            <div className="text-center text-xs text-gray-400 dark:text-gray-500">
+              value received
             </div>
           </div>
 
-          {/* Verdict */}
-          {winner === 'even' ? (
-            <div className="text-center font-bold text-green-600 dark:text-green-400 text-lg">
-              ✓ Fair trade
-            </div>
-          ) : (
-            <div className="text-center">
-              <span className="font-bold text-gray-900 dark:text-gray-100">
-                {winner === 'A' ? ownerALabel : ownerBLabel}
-              </span>{' '}
-              <span className="text-gray-600 dark:text-gray-400">wins by</span>{' '}
-              <span className="font-bold text-gray-900 dark:text-gray-100">
-                {formatValue(gap)}
-              </span>{' '}
-              <span className="text-gray-500">({gapPct}%)</span>
-            </div>
-          )}
+          {/* Verdict — always names who comes out ahead, fair or not */}
+          <div className="text-center space-y-1">
+            {isFair ? (
+              <>
+                <div className="font-bold text-green-600 dark:text-green-400 text-lg">
+                  ✓ Fair trade
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {winner === 'even' ? (
+                    'dead even'
+                  ) : (
+                    <>
+                      <span className="font-semibold">
+                        {winner === 'A' ? ownerALabel : ownerBLabel}
+                      </span>{' '}
+                      still gets{' '}
+                      <span className="font-semibold">{formatValue(gap)}</span> more
+                      {gapPct !== null && ` (+${gapPct}%)`}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div>
+                <span className="font-bold text-gray-900 dark:text-gray-100">
+                  {winner === 'A' ? ownerALabel : ownerBLabel}
+                </span>{' '}
+                <span className="text-gray-600 dark:text-gray-400">wins by</span>{' '}
+                <span className="font-bold text-gray-900 dark:text-gray-100">
+                  {formatValue(gap)}
+                </span>
+                {gapPct !== null && (
+                  <span className="text-gray-500"> ({gapPct}% more value)</span>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Fairness suggestion */}
-          {winner !== 'even' && (
+          {!isFair && (
             <FairnessSuggestion
               gap={gap}
-              losingRoster={losingRoster}
-              losingOwnerLabel={winner === 'A' ? ownerBLabel : ownerALabel}
-              picks={winner === 'A' ? (rosterPicksB ?? []) : (rosterPicksA ?? [])}
-              assetIds={losingAssetIds}
+              sweetenRoster={sweetenRoster}
+              sweetenOwnerLabel={winner === 'A' ? ownerALabel : ownerBLabel}
+              picks={winner === 'A' ? (rosterPicksA ?? []) : (rosterPicksB ?? [])}
+              assetIds={sweetenAssetIds}
             />
           )}
 

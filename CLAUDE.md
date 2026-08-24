@@ -409,7 +409,7 @@ A roster-aware trade evaluation tool using KTC values as the primary source, wit
 - **Pick tier**: estimated from original team's current record (worst record = Early, best = Late)
 - **League PPG delta**: each player's PPG vs league-wide position average in this league's scoring
 - **Roster fit**: based on receiving team's classification (Win Now / Rebuilding / etc.)
-- **Fair zone**: ±6% from 50/50 split
+- **Fair zone**: the better half may be worth at most 10% more than the other half (ratio <= 1.10)
 - **Scoring format**: controlled by `KTC_SCORING_FORMAT` in `config.py` (default `"1qb"`)
 
 For full documentation, see [TRADE_CALCULATOR.md](./docs/TRADE_CALCULATOR.md).
