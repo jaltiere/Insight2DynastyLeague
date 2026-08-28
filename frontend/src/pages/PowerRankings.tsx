@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import {
@@ -15,6 +15,12 @@ import {
   Legend,
 } from 'recharts';
 import RosterBreakdownModal from '../components/RosterBreakdownModal';
+import {
+  defaultDirectionFor,
+  sortTeams,
+  type SortDirection,
+  type SortField,
+} from '../utils/powerRankingSort';
 
 interface PowerRankingTeam {
   rank: number;
@@ -67,9 +73,24 @@ const TREND_COLORS = [
   '#84CC16', '#06B6D4',
 ];
 
+function SortArrow({
+  field,
+  sortField,
+  sortDir,
+}: {
+  field: SortField;
+  sortField: SortField;
+  sortDir: SortDirection;
+}) {
+  if (field !== sortField) return null;
+  return <span className="text-blue-600 ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>;
+}
+
 export default function PowerRankings() {
   const [selectedRosterId, setSelectedRosterId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('rank');
+  const [sortDir, setSortDir] = useState<SortDirection>('asc');
 
   const { data, isLoading, error } = useQuery<PowerRankingsResponse>({
     queryKey: ['powerRankings'],
@@ -86,6 +107,26 @@ export default function PowerRankings() {
     setSelectedRosterId(rosterId);
     setModalOpen(true);
   };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir(defaultDirectionFor(field));
+    }
+  };
+
+  // Memoised so the identity is stable across renders; a fresh [] each time
+  // would invalidate the sort memo below on every render.
+  const rankings = useMemo(() => data?.rankings ?? [], [data]);
+
+  // Only the table reorders. The bar chart stays in rank order so it keeps
+  // reading as a ranking rather than silently re-scrambling underneath.
+  const sortedRankings = useMemo(
+    () => sortTeams(rankings, sortField, sortDir),
+    [rankings, sortField, sortDir]
+  );
 
   if (isLoading) {
     return (
@@ -111,7 +152,8 @@ export default function PowerRankings() {
     );
   }
 
-  const rankings = data?.rankings || [];
+  const thClass =
+    'px-4 py-3 text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:bg-gray-100';
 
   const chartData = rankings.map((team) => ({
     name: team.team_name || team.display_name,
@@ -175,40 +217,80 @@ export default function PowerRankings() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
+              <th
+                className={`${thClass} text-center`}
+                onClick={() => handleSort('rank')}
+              >
                 Rank
+                <SortArrow field="rank" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
+              <th
+                className={`${thClass} text-center`}
+                onClick={() => handleSort('trend')}
+              >
                 Trend
+                <SortArrow field="trend" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
+              <th
+                className={`${thClass} text-left`}
+                onClick={() => handleSort('team')}
+              >
                 Team
+                <SortArrow field="team" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('total')}
+              >
                 Total
+                <SortArrow field="total" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('current')}
+              >
                 Current
+                <SortArrow field="current" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('roster')}
+              >
                 Roster
+                <SortArrow field="roster" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('historical')}
+              >
                 Historical
+                <SortArrow field="historical" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
+              <th
+                className={`${thClass} text-center`}
+                onClick={() => handleSort('record')}
+              >
                 Record
+                <SortArrow field="record" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('pf')}
+              >
                 PF
+                <SortArrow field="pf" sortField={sortField} sortDir={sortDir} />
               </th>
-              <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+              <th
+                className={`${thClass} text-right`}
+                onClick={() => handleSort('age')}
+              >
                 Avg Age
+                <SortArrow field="age" sortField={sortField} sortDir={sortDir} />
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {rankings.map((team) => (
+            {sortedRankings.map((team) => (
               <tr
                 key={team.roster_id}
                 className="hover:bg-gray-50 cursor-pointer"
