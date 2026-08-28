@@ -32,6 +32,16 @@ class PlayerValue(Base):
     # KTC rank in superflex format
     superflex_rank = Column(Integer, nullable=True)
 
+    # TE-premium variants. KTC publishes tep/tepp/teppp alongside the base
+    # values; only tep (+0.5 PPR for TEs) is stored because tepp and teppp
+    # saturate elite tight ends at the 9999 ceiling and stop discriminating.
+    # Null for players KTC does not rank — callers coalesce down to the base
+    # value rather than reading the null as zero.
+    tep_value = Column(Integer, nullable=True)
+    tep_rank = Column(Integer, nullable=True)
+    superflex_tep_value = Column(Integer, nullable=True)
+    superflex_tep_rank = Column(Integer, nullable=True)
+
     # "ktc" or "internal" (fallback)
     source = Column(String(20), nullable=False, default="ktc")
 

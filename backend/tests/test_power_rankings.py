@@ -416,3 +416,76 @@ async def test_historical_score_weights_and_max():
     assert await _calculate_historical_score(_R(), _FakeDB([champ(), champ(), div()])) == 20.0
     # 1 champ + 2 division titles: champ 5, 3 appearances -> 10 -> 15
     assert await _calculate_historical_score(_R(), _FakeDB([champ(), div(), div()])) == 15.0
+
+
+# --- league-aware KTC values -------------------------------------------------
+
+async def _te_premium_superflex_league(db, league_id="sf_league"):
+    league = await create_league(
+        db,
+        id=league_id,
+        roster_positions=["QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX"],
+        scoring_settings={"bonus_rec_te": 0.5},
+    )
+    await create_season(db, league, year=2026, group_id=league_id)
+    return league_id
+
+
+async def _add_values(db, **columns):
+    from app.models.player_value import PlayerValue
+    db.add(PlayerValue(ktc_name="Test Player", **columns))
+    await db.flush()
+
+
+@pytest.mark.anyio
+async def test_fetch_ktc_values_reads_base_column_without_a_league(db_session):
+    """Callers that pass no league keep the original 1QB behaviour."""
+    from app.api.routes.power_rankings import _fetch_ktc_values
+    await _add_values(db_session, player_id="qb1", value=5000, superflex_value=8000)
+
+    values = await _fetch_ktc_values(["qb1"], db_session)
+
+    assert values["qb1"] == 5000
+
+
+@pytest.mark.anyio
+async def test_fetch_ktc_values_uses_superflex_for_a_superflex_league(db_session):
+    """A superflex league undervalues every QB when it reads the 1QB column."""
+    from app.api.routes.power_rankings import _fetch_ktc_values
+    league_id = await _te_premium_superflex_league(db_session)
+    await _add_values(db_session, player_id="qb1", value=5000, superflex_value=8000)
+
+    values = await _fetch_ktc_values(["qb1"], db_session, league_id)
+
+    assert values["qb1"] == 8000
+
+
+@pytest.mark.anyio
+async def test_fetch_ktc_values_uses_te_premium_column(db_session):
+    """TE premium is the reason this league group exists in 2026."""
+    from app.api.routes.power_rankings import _fetch_ktc_values
+    league_id = await _te_premium_superflex_league(db_session)
+    await _add_values(
+        db_session,
+        player_id="te1",
+        value=8280,
+        superflex_value=8222,
+        tep_value=9161,
+        superflex_tep_value=9098,
+    )
+
+    values = await _fetch_ktc_values(["te1"], db_session, league_id)
+
+    assert values["te1"] == 9098
+
+
+@pytest.mark.anyio
+async def test_fetch_ktc_values_falls_back_when_premium_is_missing(db_session):
+    """Players KTC does not rank must keep their base value, not drop to 0."""
+    from app.api.routes.power_rankings import _fetch_ktc_values
+    league_id = await _te_premium_superflex_league(db_session)
+    await _add_values(db_session, player_id="deep", value=400)
+
+    values = await _fetch_ktc_values(["deep"], db_session, league_id)
+
+    assert values["deep"] == 400

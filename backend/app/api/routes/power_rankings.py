@@ -7,6 +7,10 @@ from app.database import get_db
 from app.api.deps import get_league_id, verify_cron_secret
 from app.models import Season, Roster, User, Player, Matchup, SeasonAward, MatchupPlayerPoint
 from app.models.player_value import PlayerValue
+from app.services.league_value_format import (
+    LeagueValueFormat,
+    get_league_value_format,
+)
 from app.models.power_ranking_snapshot import PowerRankingSnapshot
 from app.schemas.power_rankings import (
     PowerRankingsResponse,
@@ -97,7 +101,7 @@ async def get_roster_breakdown(
     players = list(result.scalars().all())
 
     player_stats = await _calculate_player_stats(player_ids, db, league_id)
-    ktc_values = await _fetch_ktc_values(player_ids, db)
+    ktc_values = await _fetch_ktc_values(player_ids, db, league_id)
     position_averages = _calculate_position_averages(players, player_stats)
 
     player_scores = []
@@ -616,16 +620,27 @@ def _is_startable(player: Player) -> bool:
     return True
 
 
-async def _fetch_ktc_values(player_ids: List[str], db: AsyncSession) -> Dict[str, float]:
-    """Return {player_id: ktc_value} for the given player IDs."""
+async def _fetch_ktc_values(
+    player_ids: List[str], db: AsyncSession, league_id: Optional[str] = None
+) -> Dict[str, float]:
+    """Return {player_id: ktc_value} for the given player IDs.
+
+    Scoped to one league group when league_id is given: KTC prices players
+    differently per scoring format and TE-premium setting, and the configured
+    leagues differ on both. Without the scope a superflex league reads 1QB
+    values and undervalues every QB. Omitting it keeps the plain 1QB column.
+    """
     if not player_ids:
         return {}
+    value_column = LeagueValueFormat().value_column
+    if league_id:
+        value_column = (await get_league_value_format(db, league_id)).value_column
     result = await db.execute(
-        select(PlayerValue.player_id, PlayerValue.value).where(
+        select(PlayerValue.player_id, value_column.label("value")).where(
             PlayerValue.player_id.in_(player_ids)
         )
     )
-    return {row.player_id: float(row.value) for row in result if row.player_id}
+    return {row.player_id: float(row.value or 0) for row in result if row.player_id}
 
 
 async def _calculate_player_stats(

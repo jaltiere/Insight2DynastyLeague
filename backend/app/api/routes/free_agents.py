@@ -6,10 +6,13 @@ from typing import Optional
 from app.database import get_db
 from app.api.deps import get_league_id
 from app.models import Player, PlayerValue, Roster, Season
+from app.services.league_value_format import get_league_value_format
 
 router = APIRouter()
 
-STARTABLE_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
+# Kickers were dropped from every configured league's roster_positions for
+# 2026, so they are no longer meaningful free agents.
+STARTABLE_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 
 @router.get("/free-agents")
@@ -17,7 +20,7 @@ async def get_free_agents(
     league_id: str = Depends(get_league_id),
     db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None, description="Search by player name"),
-    position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE, K)"),
+    position: Optional[str] = Query(None, description="Filter by position (QB, RB, WR, TE)"),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
 ):
@@ -42,9 +45,15 @@ async def get_free_agents(
                 if id_list:
                     rostered_ids.update(str(pid) for pid in id_list)
 
+    # KTC prices players per scoring format and TE-premium setting, both of
+    # which differ between the configured leagues.
+    fmt = await get_league_value_format(db, league_id)
+    value_col = fmt.value_column.label("ktc_value")
+    rank_col = fmt.rank_column.label("ktc_rank")
+
     # Base query: join Player with PlayerValue, exclude rostered players
     query = (
-        select(Player, PlayerValue.value, PlayerValue.rank)
+        select(Player, value_col, rank_col)
         .outerjoin(PlayerValue, PlayerValue.player_id == Player.id)
         .where(Player.position.in_(STARTABLE_POSITIONS))
         .where(Player.status == "Active")
@@ -74,7 +83,7 @@ async def get_free_agents(
     # Sort by KTC value descending (nulls last), then name
     query = (
         query
-        .order_by(case((PlayerValue.value == None, 1), else_=0), desc(PlayerValue.value), Player.full_name)
+        .order_by(case((value_col == None, 1), else_=0), desc(value_col), Player.full_name)
         .offset(offset)
         .limit(limit)
     )

@@ -152,12 +152,49 @@ def _get_rank(entry: dict, key: str) -> Optional[int]:
     return int(r) if r is not None else None
 
 
-async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> dict:
+def _get_tier(entry: dict, key: str, tier: str) -> tuple[Optional[int], Optional[int]]:
+    """Read one TE-premium tier nested inside a format block.
+
+    KTC nests tep/tepp/teppp under oneQBValues and superflexValues with the
+    same {value, rank} shape as the base. A missing block, or a zero value,
+    means KTC does not rank the player in that tier — both return None so
+    reads coalesce to the base value instead of pricing the player at zero.
+    """
+    block = (entry.get(key) or {}).get(tier)
+    if not isinstance(block, dict):
+        return None, None
+    value = int(block.get("value") or 0) or None
+    rank = block.get("rank")
+    return value, (int(rank) if rank is not None else None)
+
+
+def _value_fields(entry: dict) -> dict:
+    """All cached KTC value columns for one playersArray entry.
+
+    Only the tep tier is stored: tepp and teppp saturate elite tight ends at
+    the 9999 ceiling, so they stop distinguishing between them.
+    """
+    tep_value, tep_rank = _get_tier(entry, "oneQBValues", "tep")
+    sf_tep_value, sf_tep_rank = _get_tier(entry, "superflexValues", "tep")
+    return {
+        "value": _get_value(entry, "oneQBValues"),
+        "rank": _get_rank(entry, "oneQBValues"),
+        "superflex_value": _get_value(entry, "superflexValues") or None,
+        "superflex_rank": _get_rank(entry, "superflexValues"),
+        "tep_value": tep_value,
+        "tep_rank": tep_rank,
+        "superflex_tep_value": sf_tep_value,
+        "superflex_tep_rank": sf_tep_rank,
+    }
+
+
+async def refresh_ktc_values(db: AsyncSession) -> dict:
     """Fetch KTC values and upsert into player_values table.
 
-    Both 1QB and superflex values are always stored regardless of scoring_format.
-    The scoring_format param is kept for API compatibility but no longer controls
-    which values are saved.
+    Every format is stored — 1QB and superflex, each with its TE-premium
+    variant. Which one a page reads is resolved per league at query time by
+    app.services.league_value_format, since the configured leagues differ on
+    both axes.
 
     Returns a summary dict with counts of updated/skipped entries.
     """
@@ -192,10 +229,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
     for entry in raw_players:
         position = entry.get("position", "")
         ktc_name = entry.get("playerName", "")
-        value = _get_value(entry, "oneQBValues")
-        rank = _get_rank(entry, "oneQBValues")
-        superflex_value = _get_value(entry, "superflexValues") or None
-        superflex_rank = _get_rank(entry, "superflexValues")
+        values = _value_fields(entry)
         team = entry.get("team") or None
         age_raw = entry.get("age")
         age_str = str(age_raw) if age_raw is not None else None
@@ -210,10 +244,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
             row = values_by_pick_key.get(pick_key)
             if row:
                 row.ktc_name = ktc_name
-                row.value = value
-                row.rank = rank
-                row.superflex_value = superflex_value
-                row.superflex_rank = superflex_rank
+                for field, val in values.items():
+                    setattr(row, field, val)
                 row.source = "ktc"
                 row.position = "RDP"
                 row.last_updated = now
@@ -221,10 +253,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 db.add(PlayerValue(
                     pick_key=pick_key,
                     ktc_name=ktc_name,
-                    value=value,
-                    rank=rank,
-                    superflex_value=superflex_value,
-                    superflex_rank=superflex_rank,
+                    **values,
                     source="ktc",
                     position="RDP",
                     last_updated=now,
@@ -243,10 +272,8 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
             row = values_by_player_id.get(player_id)
             if row:
                 row.ktc_name = ktc_name
-                row.value = value
-                row.rank = rank
-                row.superflex_value = superflex_value
-                row.superflex_rank = superflex_rank
+                for field, val in values.items():
+                    setattr(row, field, val)
                 row.source = "ktc"
                 row.position = position
                 row.team = team
@@ -256,10 +283,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
                 db.add(PlayerValue(
                     player_id=player_id,
                     ktc_name=ktc_name,
-                    value=value,
-                    rank=rank,
-                    superflex_value=superflex_value,
-                    superflex_rank=superflex_rank,
+                    **values,
                     source="ktc",
                     position=position,
                     team=team,
@@ -277,7 +301,7 @@ async def refresh_ktc_values(db: AsyncSession, scoring_format: str = "1qb") -> d
         "players_updated": updated,
         "picks_updated": picks_updated,
         "players_skipped_no_match": skipped_no_match,
-        "scoring_formats_stored": ["1qb", "superflex"],
+        "scoring_formats_stored": ["1qb", "superflex", "1qb_tep", "superflex_tep"],
         "refreshed_at": now.isoformat(),
     }
     logger.info("KTC refresh complete: %s", summary)

@@ -84,7 +84,7 @@ async def get_roster_analysis(
 
     # Bulk-calculate avg points per game, KTC values, and league-wide position averages
     player_stats = await _calculate_player_stats(list(all_player_ids), db, league_id)
-    ktc_values = await _fetch_ktc_values(list(all_player_ids), db)
+    ktc_values = await _fetch_ktc_values(list(all_player_ids), db, league_id)
     all_players_list = list(players_dict.values())
     position_averages = _calculate_position_averages(all_players_list, player_stats)
 
