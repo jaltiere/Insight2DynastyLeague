@@ -15,8 +15,9 @@ from sqlalchemy import select, desc, or_, func
 
 from app.database import get_db
 from app.api.deps import get_league_id, verify_cron_secret
-from app.models import Player, Roster, Season, User, Transaction, MatchupPlayerPoint, Matchup, League, Draft
+from app.models import Player, Roster, Season, User, Matchup, Draft
 from app.models.player_value import PlayerValue
+from app.services.league_value_format import get_league_value_format
 from app.config import get_settings
 from app.services.ktc_service import refresh_ktc_values
 from app.services.sleeper_client import sleeper_client
@@ -35,18 +36,6 @@ async def _get_current_season(db: AsyncSession, league_id: str):
     return result.scalar_one_or_none()
 
 
-async def _get_league_scoring_format(db: AsyncSession, league_id: str) -> str:
-    """Return 'superflex' or '1qb' based on the league's roster positions."""
-    result = await db.execute(
-        select(League)
-        .join(Season, League.id == Season.league_id)
-        .where(Season.group_id == league_id)
-        .order_by(desc(Season.year))
-        .limit(1)
-    )
-    league = result.scalar_one_or_none()
-    positions = league.roster_positions if league else []
-    return "superflex" if "SUPER_FLEX" in (positions or []) else "1qb"
 
 
 async def _get_min_tradeable_pick_year(
@@ -66,17 +55,6 @@ async def _get_min_tradeable_pick_year(
     )
     last_completed_year = result.scalar()
     return (last_completed_year + 1) if last_completed_year else season.year
-
-
-async def _build_value_map(db: AsyncSession, superflex: bool = False) -> dict[str, int]:
-    """Return {player_id: ktc_value} for all cached player rows."""
-    col = PlayerValue.superflex_value if superflex else PlayerValue.value
-    result = await db.execute(
-        select(PlayerValue.player_id, col).where(
-            PlayerValue.player_id.isnot(None)
-        )
-    )
-    return {row[0]: (row[1] or 0) for row in result.all()}
 
 
 @router.get("/trade-calculator/owners")
@@ -123,7 +101,7 @@ async def get_owners(
 
     # Use the SAME scoring inputs as the Roster Analysis page so a team's
     # classification (Win Now / Rebuilding / ...) matches across both tools.
-    ktc_values = await _fetch_ktc_values(list(all_player_ids), db) if all_player_ids else {}
+    ktc_values = await _fetch_ktc_values(list(all_player_ids), db, league_id) if all_player_ids else {}
     position_averages = _calculate_position_averages(list(players_dict.values()), player_stats)
 
     # Compute per-roster total_score and avg_age
@@ -206,10 +184,11 @@ async def get_roster_with_values(
     players_by_id = {p.id: p for p in p_result.scalars().all()}
 
     # Fetch KTC values for these players using the league's scoring format
-    scoring_format = await _get_league_scoring_format(db, league_id)
-    superflex = scoring_format == "superflex"
-    val_col = PlayerValue.superflex_value if superflex else PlayerValue.value
-    rank_col = PlayerValue.superflex_rank if superflex else PlayerValue.rank
+    # and TE-premium setting.
+    fmt = await get_league_value_format(db, league_id)
+    scoring_format = fmt.scoring_format
+    val_col = fmt.value_column
+    rank_col = fmt.rank_column
     v_result = await db.execute(
         select(PlayerValue.player_id, val_col, rank_col).where(
             PlayerValue.player_id.in_(player_ids)
@@ -298,9 +277,9 @@ async def search_players(
     db: AsyncSession = Depends(get_db),
 ):
     """Search players by name, returning KTC values. Supports free-form lookup."""
-    scoring_format = await _get_league_scoring_format(db, league_id)
-    superflex = scoring_format == "superflex"
-    val_col = PlayerValue.superflex_value if superflex else PlayerValue.value
+    fmt = await get_league_value_format(db, league_id)
+    scoring_format = fmt.scoring_format
+    val_col = fmt.value_column
     rank_col = PlayerValue.superflex_rank if superflex else PlayerValue.rank
 
     search_term = f"%{q}%"
@@ -354,8 +333,10 @@ async def get_pick_values(
     db: AsyncSession = Depends(get_db),
 ):
     """Return all cached draft pick values grouped by year and round."""
-    scoring_format = await _get_league_scoring_format(db, league_id)
-    superflex = scoring_format == "superflex"
+    fmt = await get_league_value_format(db, league_id)
+    scoring_format = fmt.scoring_format
+    # Picks are unpositioned, so only the superflex axis can move their value.
+    superflex = fmt.superflex
 
     # Picks whose draft has already been held are no longer tradeable, but
     # their KTC rows stay cached. Without a season we cannot tell, so show all.
@@ -527,8 +508,10 @@ async def get_roster_picks(
         num_rounds = 4
 
     # ── 6. Fetch KTC pick values from DB ──────────────────────────────────
-    scoring_format = await _get_league_scoring_format(db, league_id)
-    superflex = scoring_format == "superflex"
+    fmt = await get_league_value_format(db, league_id)
+    scoring_format = fmt.scoring_format
+    # Picks are unpositioned, so only the superflex axis can move their value.
+    superflex = fmt.superflex
     pv_result = await db.execute(
         select(PlayerValue).where(PlayerValue.position == "RDP")
     )
@@ -697,7 +680,7 @@ async def refresh_values(
 ):
     """Manually trigger a KTC value refresh. Requires CRON_SECRET bearer token."""
     settings = get_settings()
-    result = await refresh_ktc_values(db, scoring_format=settings.KTC_SCORING_FORMAT)
+    result = await refresh_ktc_values(db)
     # refresh_ktc_values only flushes (sync_league owns the commit when it
     # calls the service); as a standalone endpoint we commit here.
     await db.commit()

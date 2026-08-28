@@ -409,7 +409,12 @@ A roster-aware trade evaluation tool using KTC values as the primary source, wit
 - **League PPG delta**: each player's PPG vs league-wide position average in this league's scoring
 - **Roster fit**: based on receiving team's classification (Win Now / Rebuilding / etc.)
 - **Fair zone**: the better half may be worth at most 10% more than the other half (ratio <= 1.10)
-- **Scoring format**: controlled by `KTC_SCORING_FORMAT` in `config.py` (default `"1qb"`)
+- **Scoring format**: resolved per league at query time by
+  `app/services/league_value_format.py` from the league's own Sleeper settings —
+  `roster_positions` (a `SUPER_FLEX` slot means superflex) and
+  `scoring_settings.bonus_rec_te` (any positive bonus means TE premium). Every
+  combination is scraped and stored, so a league that changes either setting
+  switches columns on the next sync with no code change.
 
 For full documentation, see [TRADE_CALCULATOR.md](./docs/TRADE_CALCULATOR.md).
 

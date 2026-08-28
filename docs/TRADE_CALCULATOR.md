@@ -24,7 +24,8 @@ Both sides of a trade must be league owners. You browse each owner's actual rost
 
 Player values are fetched from [keeptradecut.com/dynasty-rankings](https://keeptradecut.com/dynasty-rankings?picks=1) and cached in the `player_values` table. KTC embeds a `var playersArray` JavaScript variable in its HTML; the backend scrapes and parses this on each sync.
 
-- Format: `1QB` (configurable via `KTC_SCORING_FORMAT` in `config.py`)
+- Format: resolved per league from Sleeper — superflex when the league starts a
+  `SUPER_FLEX` slot, TE premium when `scoring_settings.bonus_rec_te` is positive
 - Values range roughly 0–10,000
 - Players not found on KTC show a value of 0
 
@@ -178,4 +179,4 @@ All under `/api/{league_slug}/trade-calculator/`:
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
-| `KTC_SCORING_FORMAT` | `backend/app/config.py` | `"1qb"` | KTC scoring format; change to `"superflex"` if league format changes |
+| _(none)_ | `backend/app/services/league_value_format.py` | — | Scoring format and TE premium are read per league from Sleeper, not configured. `player_values` stores all four combinations (`value`, `superflex_value`, `tep_value`, `superflex_tep_value`); the resolver picks the column and coalesces down when KTC does not rank a player. |
