@@ -382,3 +382,62 @@ async def test_pick_values_keeps_current_year_before_its_draft(
     assert resp.status_code == 200
     years = {p["year"] for p in resp.json()["picks"]}
     assert years == {2026}
+
+
+# ---------------------------------------------------------------------------
+# /trade-calculator/search
+# ---------------------------------------------------------------------------
+
+async def test_search_returns_matching_players(client: AsyncClient, db_session: AsyncSession):
+    """Regression: the endpoint 500'd on an undefined name, and no test hit it."""
+    await _seed_base(db_session)
+    await create_player(db_session, id="te_001", full_name="Brock Bowers", position="TE", age=23)
+    await db_session.commit()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/search?q=bowers")
+
+    assert resp.status_code == 200
+    names = [p["full_name"] for p in resp.json()["players"]]
+    assert "Brock Bowers" in names
+
+
+async def test_search_reports_value_and_rank_from_the_leagues_format(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Value and rank must come from the same format — a mismatched pair is how
+    the rank column drifted out of sync with the value column."""
+    league = await create_league(
+        db_session,
+        roster_positions=["QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX"],
+        scoring_settings={"bonus_rec_te": 0.5},
+    )
+    await create_season(db_session, league)
+    await create_player(db_session, id="te_001", full_name="Brock Bowers", position="TE", age=23)
+    db_session.add(
+        PlayerValue(
+            player_id="te_001", ktc_name="Brock Bowers", position="TE", source="ktc",
+            value=8280, rank=6,
+            superflex_value=8222, superflex_rank=9,
+            tep_value=9161, tep_rank=5,
+            superflex_tep_value=9098, superflex_tep_rank=7,
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/search?q=bowers")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["scoring_format"] == "superflex"
+    player = next(p for p in data["players"] if p["player_id"] == "te_001")
+    assert player["ktc_value"] == 9098
+    assert player["ktc_rank"] == 7
+
+
+async def test_search_with_no_matches_returns_empty(client: AsyncClient, db_session: AsyncSession):
+    await _seed_base(db_session)
+
+    resp = await client.get(f"{LEAGUE_PREFIX}/trade-calculator/search?q=zzzznotaplayer")
+
+    assert resp.status_code == 200
+    assert resp.json()["players"] == []

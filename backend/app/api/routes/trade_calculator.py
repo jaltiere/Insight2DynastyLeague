@@ -15,10 +15,9 @@ from sqlalchemy import select, desc, or_, func
 
 from app.database import get_db
 from app.api.deps import get_league_id, verify_cron_secret
-from app.models import Player, Roster, Season, User, Matchup, Draft
+from app.models import Player, Roster, Season, User, Draft
 from app.models.player_value import PlayerValue
 from app.services.league_value_format import get_league_value_format
-from app.config import get_settings
 from app.services.ktc_service import refresh_ktc_values
 from app.services.sleeper_client import sleeper_client
 from app.api.routes.power_rankings import _calculate_player_stats
@@ -280,7 +279,7 @@ async def search_players(
     fmt = await get_league_value_format(db, league_id)
     scoring_format = fmt.scoring_format
     val_col = fmt.value_column
-    rank_col = PlayerValue.superflex_rank if superflex else PlayerValue.rank
+    rank_col = fmt.rank_column
 
     search_term = f"%{q}%"
     result = await db.execute(
@@ -679,7 +678,6 @@ async def refresh_values(
     db: AsyncSession = Depends(get_db),
 ):
     """Manually trigger a KTC value refresh. Requires CRON_SECRET bearer token."""
-    settings = get_settings()
     result = await refresh_ktc_values(db)
     # refresh_ktc_values only flushes (sync_league owns the commit when it
     # calls the service); as a standalone endpoint we commit here.
